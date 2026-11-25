@@ -5,7 +5,7 @@
 **Build Version:** Feature Complete Build v8.0 (Feature Freeze Milestone)  
 **Team Members:** Shaunak M Vidwans (Lead), Pavan Sai Komara, Sridevi Mudiyanur Ramamurthy, Zeba Afreen  
 **Date:** November 2026  
-- **Published Link:** [https://vshaunak.github.io/RacingGenesis-4.0v/]
+
 - **GitHub Repository:** [https://github.com/VShaunak/RacingGenesis-4.0v](https://github.com/VShaunak/RacingGenesis-4.0v)  
 - **Local Playable Prototype:** `http://localhost:8081` (via `python serve.py 8081` inside `prototype/`)
 
@@ -44,26 +44,70 @@ Assignment 6 marks our formal **Feature Freeze (v8.0)**. All planned technical p
 
 ---
 
-## 👥 Formal Peer Playtesting User Study (Phase 2)
+## 👥 Assignment 6 User Study Results
 
-Per Assignment 6 specifications, we conducted formal playtests with **5 peer subjects from outside our group** using the Think-Aloud Protocol (unprompted controls exploration, silent note-taking, and standardized post-play interviews):
+**CS 549 AI for Visual Computing, Rutgers University**
 
-| Participant | Background / Role | Key Observations | Post-Play Feedback & Ratings | Test Dossier Links |
-| :--- | :--- | :--- | :--- | :--- |
-| **Alex Chen** | Novice Gamer | Instinctively grasped controls; self-corrected on Turn 1 via HUD threshold braking warning. | **Controls: 8/10** — "Very responsive steering. Loved the steering wheel dashboard. Would like a colored racing line on tarmac." | [DOCX](file:///d:/My%20files/Rutgers/7-AI%20for%20Visual%20Computing/All%20assignments/Assignment-6/peer_playtesting/Peer_Playtest_Participant_1_Alex_Chen.docx) • [PDF](file:///d:/My%20files/Rutgers/7-AI%20for%20Visual%20Computing/All%20assignments/Assignment-6/peer_playtesting/Peer_Playtest_Participant_1_Alex_Chen.pdf) |
-| **Marcus Vance** | Sim-Racer | Stress-tested limit handling and slip angles. Praised Pacejka friction curves and collision impulse. | **Controls: 9/10** — "Grip feel is authentic. Brake disc thermal glow looks amazing. Slipstream draft feels just like real F1." | [DOCX](file:///d:/My%20files/Rutgers/7-AI%20for%20Visual%20Computing/All%20assignments/Assignment-6/peer_playtesting/Peer_Playtest_Participant_2_Marcus_Vance.docx) • [PDF](file:///d:/My%20files/Rutgers/7-AI%20for%20Visual%20Computing/All%20assignments/Assignment-6/peer_playtesting/Peer_Playtest_Participant_2_Marcus_Vance.pdf) |
-| **Elena Rostova** | Graphics TA | Audited shader pipelines and draw calls. Confirmed zero GPU leaks and locked 90 FPS performance. | **Cohesion: 9.5/10** — "Instanced tire smoke and brake thermal glow integrate seamlessly. Atmospheric sky gradient adds great depth." | [DOCX](file:///d:/My%20files/Rutgers/7-AI%20for%20Visual%20Computing/All%20assignments/Assignment-6/peer_playtesting/Peer_Playtest_Participant_3_Elena_Rostova.docx) • [PDF](file:///d:/My%20files/Rutgers/7-AI%20for%20Visual%20Computing/All%20assignments/Assignment-6/peer_playtesting/Peer_Playtest_Participant_3_Elena_Rostova.pdf) |
-| **Jordan Patel** | UI/UX Critic | Tested circuit presets and 3D handle editing. Praised clean telemetry drawer and CSV export. | **Intuitiveness: 8.5/10** — "Onboarding guide made keys obvious immediately. CSV export downloaded cleanly with full timestamps." | [DOCX](file:///d:/My%20files/Rutgers/7-AI%20for%20Visual%20Computing/All%20assignments/Assignment-6/peer_playtesting/Peer_Playtest_Participant_4_Jordan_Patel.docx) • [PDF](file:///d:/My%20files/Rutgers/7-AI%20for%20Visual%20Computing/All%20assignments/Assignment-6/peer_playtesting/Peer_Playtest_Participant_4_Jordan_Patel.pdf) |
-| **Liam Gallagher** | Systems Tester | Tested stress scaling on 10,000m endurance circuit at 720 samples. Frametime stayed locked at 11.1ms (90 FPS). | **Stability: 10/10** — "Zero crashes, zero NaN errors across 15 continuous laps. Outstanding garbage collection optimization." | [DOCX](file:///d:/My%20files/Rutgers/7-AI%20for%20Visual%20Computing/All%20assignments/Assignment-6/peer_playtesting/Peer_Playtest_Participant_5_Liam_Gallagher.docx) • [PDF](file:///d:/My%20files/Rutgers/7-AI%20for%20Visual%20Computing/All%20assignments/Assignment-6/peer_playtesting/Peer_Playtest_Participant_5_Liam_Gallagher.pdf) |
+### Methodology
+
+After playing Racing Genesis 2.0, participants completed a six-question Google Form about onboarding, controls, performance, enjoyment, and possible improvements. The form used a 1–10 controls rating, a Yes/No question about objective clarity, and four open-ended questions. The five responses below were selected from nine submissions for the specificity of their gameplay feedback.
+
+### Subject Feedback
+
+All **nine respondents** said the objective was clear from the beginning. The five students profiled below rated the controls **8.8/10** on average. In those five responses, three participants reported no visual glitches, one reported a rendering problem, and one could not verify real-time performance.
+
+| Participant | Controls Rating | Objective Clarity | Visual Glitches / Performance | Key Strengths & Suggestions | Test Dossier Links |
+| :--- | :---: | :---: | :--- | :--- | :--- |
+| **Swanith Reddy Inugala** | **8/10** | Yes | Blank 3D view at ~2 FPS in cloud browser; visible via Top / Orbit → Map | Liked starting lights & braking telemetry. Suggested collapsing editor at startup & adding grip lap-time comparison. | [DOCX](file:///d:/My%20files/Rutgers/7-AI%20for%20Visual%20Computing/All%20assignments/Assignment-6/peer_playtesting/Peer_Playtest_Participant_1_Swanith_Reddy_Inugala.docx) • [PDF](file:///d:/My%20files/Rutgers/7-AI%20for%20Visual%20Computing/All%20assignments/Assignment-6/peer_playtesting/Peer_Playtest_Participant_1_Swanith_Reddy_Inugala.pdf) |
+| **Shweatha Bathina Mallikarjuna** | **9/10** | Yes | No glitches or lag reported | Enjoyed racing itself. Suggested brief tutorial, clearer control instructions, and polished feedback transitions. | [DOCX](file:///d:/My%20files/Rutgers/7-AI%20for%20Visual%20Computing/All%20assignments/Assignment-6/peer_playtesting/Peer_Playtest_Participant_2_Shweatha_Bathina_Mallikarjuna.docx) • [PDF](file:///d:/My%20files/Rutgers/7-AI%20for%20Visual%20Computing/All%20assignments/Assignment-6/peer_playtesting/Peer_Playtest_Participant_2_Shweatha_Bathina_Mallikarjuna.pdf) |
+| **Dev Sachin Solai Giri** | **8/10** | Yes | Could not verify real-time performance | Liked AI/Manual toggle, cameras, telemetry, and track customization. Suggested beginner tutorial, simplified HUD, and AI opponents. | [DOCX](file:///d:/My%20files/Rutgers/7-AI%20for%20Visual%20Computing/All%20assignments/Assignment-6/peer_playtesting/Peer_Playtest_Participant_3_Dev_Sachin_Solai_Giri.docx) • [PDF](file:///d:/My%20files/Rutgers/7-AI%20for%20Visual%20Computing/All%20assignments/Assignment-6/peer_playtesting/Peer_Playtest_Participant_3_Dev_Sachin_Solai_Giri.pdf) |
+| **Prithvi Govindareddy** | **9/10** | Yes | Smooth tracking, no noticeable glitches or lag | Praised physics, animations, and helicopter tracking. Suggested on-screen hint for 3D zoom controls. | [DOCX](file:///d:/My%20files/Rutgers/7-AI%20for%20Visual%20Computing/All%20assignments/Assignment-6/peer_playtesting/Peer_Playtest_Participant_4_Prithvi_Govindareddy.docx) • [PDF](file:///d:/My%20files/Rutgers/7-AI%20for%20Visual%20Computing/All%20assignments/Assignment-6/peer_playtesting/Peer_Playtest_Participant_4_Prithvi_Govindareddy.pdf) |
+| **Jayanth Jayaram Naidu Jayakumar** | **10/10** | Yes | Car stayed in frame throughout; zero glitches | Loved helicopter view and zooming/panning during race. Suggested showing lap target and AI/Manual choice in pre-race intro. | [DOCX](file:///d:/My%20files/Rutgers/7-AI%20for%20Visual%20Computing/All%20assignments/Assignment-6/peer_playtesting/Peer_Playtest_Participant_5_Jayanth_Jayaram_Naidu_Jayakumar.docx) • [PDF](file:///d:/My%20files/Rutgers/7-AI%20for%20Visual%20Computing/All%20assignments/Assignment-6/peer_playtesting/Peer_Playtest_Participant_5_Jayanth_Jayaram_Naidu_Jayakumar.pdf) |
+
+#### Swanith Reddy Inugala
+
+- **What they liked most.** Liked the starting lights and seeing brake pressure rise in the telemetry as the AI entered a marked braking zone on the map.
+- **Objective and controls.** Said the objective was clear and rated the controls **8/10**.
+- **Confusion and performance.** After pressing Start in AI mode, the speed and lap timer updated while the 3D view stayed blank at about **2 FPS** in a cloud browser. They could see the circuit after switching to **Top / Orbit → Map**.
+- **Suggestions.** Collapse the track editor at startup, prompt players to try Map if 3D fails, and offer a way to compare lap times at different grip settings on the same circuit.
+
+#### Shweatha Bathina Mallikarjuna
+
+- **What they liked most.** Enjoyed the racing itself.
+- **Objective and controls.** Said the objective was clear and rated the controls **9/10**.
+- **Confusion and performance.** Found the game easy to understand and reported no glitches or lag.
+- **Suggestions.** Add a brief tutorial, clearer control instructions, and more noticeable gameplay feedback. Polish transitions and responsiveness.
+
+#### Dev Sachin Solai Giri
+
+- **What they liked most.** Liked the option to switch between AI and manual driving. The camera angles and live telemetry reinforced the simulation feel, and track customization stood out.
+- **Objective and controls.** Said the objective was clear and rated the controls **8/10**.
+- **Confusion and performance.** Wanted a quick explanation of what to do before starting the race. They could not verify real-time performance.
+- **Suggestions.** Add a beginner tutorial and an optional simplified HUD. They also suggested AI opponents, difficulty levels, and a leaderboard for replayability.
+
+#### Prithvi Govindareddy
+
+- **What they liked most.** Praised the physics, animations, and AI. Helicopter tracking helped them follow the car through turns, and zooming and panning let them explore the circuit during the race.
+- **Objective and controls.** Said the objective was clear and rated the controls **9/10**.
+- **Confusion and performance.** Found the camera views easy to understand. Reported smooth tracking, with the car in frame for a full Workshop lap and no noticeable glitches or lag.
+- **Suggestion.** Make the 3D zoom controls easier to discover with an on-screen hint.
+
+#### Jayanth Jayaram Naidu Jayakumar
+
+- **What they liked most.** Liked seeing the car and the road ahead from the helicopter view and exploring the circuit by zooming and panning during the race.
+- **Objective and controls.** Said the objective was clear and rated the controls **10/10**.
+- **Confusion and performance.** Found each camera view easy to understand and reported no glitches. The car stayed in frame throughout play.
+- **Suggestion.** Show the lap target and the choice between manual driving and AI mode in a short pre-race introduction.
 
 ---
 
-## 🛠️ Action Items for Final Optimization Sprint (Assignment 7)
+### Assignment 7 Action Items
 
-1. **Dynamic Tarmac Racing Line Assist**: Add an optional toggleable racing line projected on tarmac (green = throttle, red = threshold brake point) to assist novice players.
-2. **DRS Wing Flap Animation**: Animate the rear wing flap opening when slipstream drafting is active.
-3. **Audio Mixer Dynamic Headroom**: Balance compressor gains so engine high-RPM screech does not mask tire scrub and curb buzz.
-4. **Mobile Pinch-Zoom Touch Damping**: Increase deadzones on mobile viewports for smoother handle sculpting.
+1. **Handle 3D startup failures.** Reproduce the blank view and low frame rate in a cloud browser. Add a clear loading or error message and offer a **Switch to Map** button if the 3D view fails to initialize.
+2. **Clarify the start of a race.** Add a brief introduction with the lap target, the manual and AI options, and the basic manual controls.
+3. **Simplify the default HUD.** Start with the track editor collapsed and keep the race, lap count, and playback controls prominent. Keep the editor toggle visible for players who want to customize the track.
+4. **Clarify race-state transitions.** Show consistent countdown, racing, and paused indicators near the playback controls. Test the Start and Resume flows to make sure the indicators update promptly.
+5. **Make camera gestures easier to discover.** Put the existing Full circuit zoom controls near the camera selector and show a short drag-to-rotate hint in the 3D views.
 
 ---
 
