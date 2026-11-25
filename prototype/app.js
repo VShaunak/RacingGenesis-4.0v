@@ -3294,12 +3294,42 @@ class OpponentCarAgent {
     this.car = new RaceCar3D(scene);
     this.recolorLivery();
 
-    this.progress = 0.07;
-    this.speed = 52.0;
-    this.targetSpeed = 52.0;
-    this.lateralOffset = 1.75;
+    this.progress = 0.004;
+    this.speed = 0.0;
+    this.targetSpeed = 48.0;
+    this.lateralOffset = 1.6;
     this.enabled = true;
     this.tempVec = new THREE.Vector3();
+    this.app = null;
+  }
+
+  reset(track) {
+    if (!track) return;
+    const trackLength = track.totalLength || 5000;
+    // Starting Grid Slot P2: ~20m ahead on the starting grid, right lane (+1.6m on tarmac)
+    this.progress = Math.min(0.06, 20.0 / trackLength);
+    this.speed = 0.0;
+    this.targetSpeed = 48.0;
+    this.lateralOffset = 1.6;
+
+    const wrapped = ((this.progress % 1.0) + 1.0) % 1.0;
+    const s = track.getSampleAt ? track.getSampleAt(wrapped) : null;
+    let posX = 0, posZ = 0, heading = 0;
+    if (s) {
+      posX = s.position.x + s.normal.x * this.lateralOffset;
+      posZ = s.position.z + s.normal.z * this.lateralOffset;
+      heading = Math.atan2(s.tangent.x, s.tangent.z);
+    } else if (track.curve) {
+      track.curve.getPointAt(wrapped, this.tempVec);
+      heading = track.getTrajectoryHeading ? track.getTrajectoryHeading(wrapped) : 0;
+      posX = this.tempVec.x + Math.cos(heading) * this.lateralOffset;
+      posZ = this.tempVec.z - Math.sin(heading) * this.lateralOffset;
+    }
+
+    this.car.carGroup.position.set(posX, 0.05, posZ);
+    this.car.carGroup.rotation.set(0, heading, 0);
+    this.car.carGroup.visible = true;
+    this.car.updateVisuals(0, 0, false, 0.016);
   }
 
   recolorLivery() {
@@ -3314,7 +3344,7 @@ class OpponentCarAgent {
   }
 
   update(dt, track, playerProgress, playerSpeed) {
-    if (!this.enabled || !track) {
+    if (!this.enabled || !track || !track.curve) {
       this.car.carGroup.visible = false;
       return;
     }
@@ -3339,16 +3369,23 @@ class OpponentCarAgent {
     const dProgress = (this.speed * dt) / trackLength;
     this.progress = (this.progress + dProgress) % 1.0;
 
-    track.getPathPosition(this.progress, this.tempVec);
-    const heading = track.getTrajectoryHeading(this.progress);
+    const wrapped = ((this.progress % 1.0) + 1.0) % 1.0;
+    // Follow the actual road spline centerline (track.samples/curve) to guarantee 100% on-tarmac driving
+    const safeLaneOffset = THREE.MathUtils.clamp(this.lateralOffset, -2.5, 2.5);
+    const s = track.getSampleAt ? track.getSampleAt(wrapped) : null;
+    let posX = 0, posZ = 0, heading = 0;
+    if (s) {
+      posX = s.position.x + s.normal.x * safeLaneOffset;
+      posZ = s.position.z + s.normal.z * safeLaneOffset;
+      heading = Math.atan2(s.tangent.x, s.tangent.z);
+    } else if (track.curve) {
+      track.curve.getPointAt(wrapped, this.tempVec);
+      heading = track.getTrajectoryHeading ? track.getTrajectoryHeading(wrapped) : 0;
+      posX = this.tempVec.x + Math.cos(heading) * safeLaneOffset;
+      posZ = this.tempVec.z - Math.sin(heading) * safeLaneOffset;
+    }
 
-    const perpX = Math.cos(heading);
-    const perpZ = -Math.sin(heading);
-    this.car.carGroup.position.set(
-      this.tempVec.x + perpX * this.lateralOffset,
-      0.05,
-      this.tempVec.z + perpZ * this.lateralOffset
-    );
+    this.car.carGroup.position.set(posX, 0.05, posZ);
     this.car.carGroup.rotation.x = 0;
     this.car.carGroup.rotation.z = 0;
 
@@ -3359,7 +3396,7 @@ class OpponentCarAgent {
 
     // Opponent physical world collision resolution (cannot pass through trackside objects)
     if (this.app && this.app.resolveWorldCollisions) {
-      const oppCol = this.app.resolveWorldCollisions(this.car.carGroup.position, this.speed, this.car.carGroup.rotation.y, false, dt);
+      const oppCol = this.app.resolveWorldCollisions(this.car.carGroup.position, this.speed, this.car.carGroup.rotation.y, false, dt, this.progress);
       if (oppCol.collided) {
         this.speed = oppCol.newSpeed;
       }
@@ -3621,6 +3658,9 @@ class RacingGenesisApp {
     // 6. Connect UI & Windows 11 Panel Drawer Controls
     this.bindUI();
 
+    // Reset session state to starting grid
+    this.reset();
+
     // Initial HUD & Dashboard Render
     this.updateHUD();
 
@@ -3715,7 +3755,20 @@ class RacingGenesisApp {
     const trunkGeom = new THREE.CylinderGeometry(0.55, 0.75, 5.0, 8);
     const coneGeom = new THREE.ConeGeometry(4.0, 6.0, 8);
 
+    const roadHalfW = (this.track && this.track.roadWidth) ? (this.track.roadWidth * 0.5) : 7.5;
+    const minTreeClearanceSq = (roadHalfW + 16.0) * (roadHalfW + 16.0);
+    const isTooCloseToTrack = (x, z) => {
+      if (!this.track || !this.track.samples || this.track.samples.length === 0) return false;
+      for (let s = 0; s < this.track.samples.length; s += 4) {
+        const sp = this.track.samples[s].position;
+        const d2 = (x - sp.x) * (x - sp.x) + (z - sp.z) * (z - sp.z);
+        if (d2 < minTreeClearanceSq) return true;
+      }
+      return false;
+    };
+
     const makeTree = (x, z, scale = 1.0) => {
+      if (isTooCloseToTrack(x, z)) return null;
       this.treeColliders.push({ x, z, radius: 3.2 * scale, name: "Pine Tree" });
       const tree = new THREE.Group();
       tree.position.set(x, 0, z);
@@ -3736,6 +3789,12 @@ class RacingGenesisApp {
       return tree;
     };
 
+    const addTree = (x, z, scale = 1.0) => {
+      const tree = makeTree(x, z, scale);
+      if (tree) this.treeGroup.add(tree);
+      return tree;
+    };
+
     // Concentric outer tree lines following the track perimeter
     const ring1Count = 42;
     const ring1Radius = trackR + 55;
@@ -3745,7 +3804,7 @@ class RacingGenesisApp {
       const tx = Math.cos(angle) * rad;
       const tz = Math.sin(angle) * rad;
       const sc = 0.9 + (Math.sin(t * 5) + 1) * 0.3;
-      this.treeGroup.add(makeTree(tx, tz, sc));
+      addTree(tx, tz, sc);
     }
 
     const ring2Count = 56;
@@ -3756,7 +3815,7 @@ class RacingGenesisApp {
       const tx = Math.cos(angle) * rad;
       const tz = Math.sin(angle) * rad;
       const sc = 1.0 + (Math.cos(t * 4) + 1) * 0.35;
-      this.treeGroup.add(makeTree(tx, tz, sc));
+      addTree(tx, tz, sc);
     }
 
     // 3. Scenic Infield Tree Groves (placed in interior clearings safely away from track)
@@ -3779,9 +3838,9 @@ class RacingGenesisApp {
 
         if (minDistSq > (roadHalfW + 22.0) * (roadHalfW + 22.0)) {
           // Cluster of 3 trees in grove
-          this.treeGroup.add(makeTree(gx, gz, 1.0));
-          this.treeGroup.add(makeTree(gx + 9.0, gz + 4.0, 0.85));
-          this.treeGroup.add(makeTree(gx - 6.0, gz + 8.0, 1.15));
+          addTree(gx, gz, 1.0);
+          addTree(gx + 9.0, gz + 4.0, 0.85);
+          addTree(gx - 6.0, gz + 8.0, 1.15);
         }
       }
 
@@ -3793,7 +3852,7 @@ class RacingGenesisApp {
           const tx = s.position.x + s.normal.x * side * distOff;
           const tz = s.position.z + s.normal.z * side * distOff;
           const sc = 0.95 + ((i % 5) * 0.1);
-          this.treeGroup.add(makeTree(tx, tz, sc));
+          addTree(tx, tz, sc);
         });
       }
     }
@@ -4471,6 +4530,10 @@ class RacingGenesisApp {
       this.car.carGroup.rotation.y = this.manualHeading;
     }
 
+    if (this.opponent && this.track) {
+      this.opponent.reset(this.track);
+    }
+
     if (this.cameraManager) {
       this.cameraManager.cameraInitialized = false;
     }
@@ -4501,7 +4564,7 @@ class RacingGenesisApp {
      Prevents vehicle penetration into trackside objects (pillars, grandstands,
      viewing berms, pine trees, guard rails) with separating impulse response.
      ========================================================================== */
-  resolveWorldCollisions(carPos, speed, heading, isManual, dt) {
+  resolveWorldCollisions(carPos, speed, heading, isManual, dt, knownProgress = null) {
     let collided = false;
     let newSpeed = speed;
     let newHeading = heading;
@@ -4579,7 +4642,9 @@ class RacingGenesisApp {
 
     // 3. Track Guardrails / Armco Steel Perimeter Barriers
     if (this.track && this.track.samples && this.track.samples.length > 0) {
-      const nearestSample = this.track.getSampleAt(this.progress);
+      const nearestSample = (typeof knownProgress === "number")
+        ? this.track.getSampleAt(knownProgress)
+        : (this.track.getNearestProgress ? this.track.getSampleAt(this.track.getNearestProgress(carPos, isManual ? this.progress : null)) : this.track.getSampleAt(this.progress));
       const toCarX = carPos.x - nearestSample.position.x;
       const toCarZ = carPos.z - nearestSample.position.z;
       const latOffset = toCarX * nearestSample.normal.x + toCarZ * nearestSample.normal.z;
@@ -4769,7 +4834,7 @@ class RacingGenesisApp {
     this.car.carGroup.position.y = 0.05;
 
     // Physical World Object Collision Resolution (Prevents passing through any scene objects, stops right there)
-    const worldCol = this.resolveWorldCollisions(this.car.carGroup.position, this.speed, this.manualHeading, true, dt);
+    const worldCol = this.resolveWorldCollisions(this.car.carGroup.position, this.speed, this.manualHeading, true, dt, this.progress);
     if (worldCol.collided) {
       this.speed = 0;
       this.throttleLevel = 0;
