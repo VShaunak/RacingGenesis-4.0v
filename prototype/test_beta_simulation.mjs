@@ -119,7 +119,6 @@ if (!app) {
 
 console.log('✓ Assignment 5 Simulator instance created successfully!');
 console.log('✓ Player Car initialized with Brake Incandescence Material');
-console.log('✓ Opponent AI Agent initialized at progress:', app.opponent.progress);
 console.log('✓ Tire Smoke & Skidmark System loaded (max particles:', app.tireSmokeSystem.maxParticles, ')');
 console.log('✓ 90 FPS Live Telemetry Canvas Waveform Graph initialized');
 
@@ -128,7 +127,7 @@ console.log('\n--- Test 1: Autonomous AI Simulation Loop (30 Frames) ---');
 for (let i = 0; i < 30; i++) {
   app.stepFrame(1 / 90);
 }
-console.log(`Speed: ${(app.speed * 2.23694).toFixed(1)} mph | Lat-G: ${app.lateralG.toFixed(2)} G | Opponent Speed: ${(app.opponent.speed * 2.23694).toFixed(1)} mph`);
+console.log(`Speed: ${(app.speed * 2.23694).toFixed(1)} mph | Lat-G: ${app.lateralG.toFixed(2)} G`);
 
 // Test 2: Trigger heavy braking and test brake heat incandescence
 console.log('\n--- Test 2: Brake Incandescence & Particle Smoke Test ---');
@@ -162,10 +161,8 @@ app.car.carGroup.position.x = app.track.roadWidth * 0.5 - 0.2;
 app.stepManualPhysics(1 / 90);
 console.log(`Curb contact detected: ${app.isOverCurb}`);
 
-// Test 4: Collision & Slipstream and CSV Export
-console.log('\n--- Test 4: Collision Impulse & CSV Telemetry Logging ---');
-const colCheck = app.opponent.checkCollisionAndSlipstream(app.car.carGroup.position, app.speed, 0, 1 / 90);
-console.log('Collision & drafting check returned:', colCheck);
+// Test 4: CSV telemetry logging
+console.log('\n--- Test 4: CSV Telemetry Logging ---');
 app.state = "RACING";
 app.speed = 60.0;
 app.recordLapTelemetryPoint();
@@ -308,48 +305,21 @@ if (launchedMph < 50 || app.currentGear < 2) {
 }
 console.log('✓ Speed and transmission gears climb immediately upon pressing gas pedal');
 
-// Test 10: Autonomous AI Overtake Planner when Opponent is Near
-console.log('\n--- Test 10: Autonomous AI Overtake Planning When Opponent is Near ---');
-app.driverMode = 'ai';
-app.state = 'RUNNING';
-app.progress = 0.20;
-app.speed = 70.0;
-// Place opponent 22m ahead on the right side of the track (lateralOffset = +1.75)
-const trackLength = app.track.totalLength || 5000;
-app.opponent.progress = 0.20 + (22.0 / trackLength);
-app.opponent.speed = 55.0;
-app.opponent.lateralOffset = 1.75; // Right lane
-app.opponent.enabled = true;
+// Test 10: Single-car AI race progression
+console.log('\n--- Test 10: Single-car AI Race Progression ---');
+app.reset();
+app.driverMode = "ai";
+app.state = "RUNNING";
+for (let i = 0; i < 120; i++) app.stepFrame(1 / 90);
 
-// Step AI physics: should plan overtake in slipstream
-app.stepPhysics(1 / 90);
-console.log(`Opponent Gap: 22m | AI State: ${app.aiState} | Overtake Stage: ${app.overtakeStage}`);
-if (!app.isOvertaking || app.overtakeStage !== "SLINGSHOT") {
-  throw new Error('AI did not initiate overtake planning when opponent is near ahead!');
+let raceCars = 0;
+app.scene.traverse(object => {
+  if (object.name === "Tapered nose and front monocoque") raceCars++;
+});
+if (raceCars !== 1 || app.speed <= 0 || app.progress <= 0) {
+  throw new Error("AI mode must progress with exactly one car in the scene.");
 }
-console.log('✓ AI mode plans overtake and establishes slingshot drafting behind nearby opponent');
-
-// Close gap to 12m: AI should pull out to the open left lane (lateralOffset -> -2.85)
-app.opponent.progress = 0.20 + (12.0 / trackLength);
-for (let i = 0; i < 8; i++) {
-  app.stepPhysics(1 / 90);
-  app.stepFrame(1 / 90);
-}
-console.log(`Opponent Gap: ~10m | AI State: ${app.aiState} | Overtake Stage: ${app.overtakeStage} | Lateral Offset: ${app.aiLateralOffset.toFixed(2)}m`);
-if (app.overtakeStage !== "PULLING_OUT" || app.aiLateralOffset >= 0) {
-  throw new Error(`AI did not pull out to open pass lane! Lateral offset: ${app.aiLateralOffset}`);
-}
-console.log('✓ AI mode pulls out to open opposite lane (left) to execute high-speed overtake pass');
-
-// Complete pass: player reaches ahead of opponent by 15m
-app.progress = app.opponent.progress + (15.0 / trackLength);
-app.stepPhysics(1 / 90);
-app.stepFrame(1 / 90);
-console.log(`Overtake Passed Ahead | AI State: ${app.aiState} | Overtake Stage: ${app.overtakeStage}`);
-if (app.overtakeStage !== "CLEAR") {
-  throw new Error('AI did not complete overtake sequence when safely ahead!');
-}
-console.log('✓ AI mode completes overtake sequence and smoothly tucks back to optimal racing line');
+console.log('✓ AI mode drives the single animated car around the track');
 
 console.log('\n======================================================');
 console.log(' ALL ASSIGNMENT 6 FEATURE COMPLETE TESTS PASSED! ');
