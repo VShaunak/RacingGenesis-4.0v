@@ -5,7 +5,7 @@
 **Build Version:** Feature Complete Build v8.0 (Feature Freeze Milestone)  
 **Team Members:** Shaunak M Vidwans (Lead), Pavan Sai Komara, Sridevi Mudiyanur Ramamurthy, Zeba Afreen  
 **Date:** November 2026  
-
+- **Published Link:** [https://vshaunak.github.io/RacingGenesis-4.0v/]
 - **GitHub Repository:** [https://github.com/VShaunak/RacingGenesis-4.0v](https://github.com/VShaunak/RacingGenesis-4.0v)  
 - **Local Playable Prototype:** `http://localhost:8081` (via `python serve.py 8081` inside `prototype/`)
 
