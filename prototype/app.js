@@ -14,6 +14,7 @@
  */
 
 import * as THREE from "./three.module.js";
+import { TrackOverview } from "./track-overview.js";
 
 // Unit conversions
 const MS_TO_MPH = 2.23694;
@@ -2559,10 +2560,11 @@ class RaceCar3D {
    ========================================================================== */
 
 class CameraManager3D {
-  constructor(camera, domElement, scene = null) {
+  constructor(camera, domElement, scene) {
     this.camera = camera;
     this.domElement = domElement;
     this.scene = scene;
+    this.drivingFar = camera.far;
     this.mode = "chase";
 
     this.currentPos = new THREE.Vector3(0, 10, -20);
@@ -2574,11 +2576,18 @@ class CameraManager3D {
     this.lookPos = new THREE.Vector3();
 
     this.orbitDistance = 145;
-    this.orbitTheta = 0;
-    this.orbitPhi = Math.PI / 4;
+    this.orbitTarget = new THREE.Vector3();
+    this.orbitFocus = new THREE.Vector3();
+    this.orbitDirection = new THREE.Vector3();
+    this.orbitRadius = 100;
+    this.orbitFitDistance = 145;
+    this.resetTrackAngles();
+    this.resetAerialView();
     this.isDragging = false;
     this.prevMouse = { x: 0, y: 0 };
     this.locked = false;
+    this.editingTrack = false;
+    this.pinchSpan = 0;
 
     this.cameraYaw = 0; // Filtered camera yaw for rock-solid stability in turns
     this.cameraInitialized = false;
@@ -2590,17 +2599,146 @@ class CameraManager3D {
     this.bindEvents();
   }
 
+  setTrack(track) {
+    this.orbitSamples = track.samples;
+    this.orbitMargin = track.roadWidth / 2 + 16;
+    this.fitTrack(1, true);
+  }
+
+  circuitBounds(theta) {
+    const sin = Math.sin(theta), cos = Math.cos(theta);
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const { position } of this.orbitSamples) {
+      const x = position.x * cos - position.z * sin;
+      const z = position.x * sin + position.z * cos;
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minZ = Math.min(minZ, z);
+      maxZ = Math.max(maxZ, z);
+    }
+    return { minX, maxX, minZ, maxZ };
+  }
+
+  fitTrack(zoom = 1, orient = false) {
+    // Reserve the drawer/header space so the fitted track remains visible.
+    const panelWidth = id => {
+      const el = $(id);
+      return el && !el.classList.contains("collapsed") ? (el.getBoundingClientRect?.().width || 320) + 40 : 24;
+    };
+    const widthFraction = Math.max(0.2, 1 - 2 * Math.max(panelWidth("leftPanel"), panelWidth("rightPanel")) / window.innerWidth);
+    const heightFraction = Math.max(0.3, 1 - 176 / window.innerHeight);
+    const tanHalfFov = Math.tan(THREE.MathUtils.degToRad(50 / 2));
+    const horizontal = tanHalfFov * this.camera.aspect * widthFraction;
+    const vertical = tanHalfFov * heightFraction;
+    let bounds = this.circuitBounds(this.orbitTheta);
+    if (orient && this.mode === "orbit" && this.orbitPhi > 1.56) {
+      const framingSize = ({ minX, maxX, minZ, maxZ }) => Math.max(
+        (maxX - minX + 2 * this.orbitMargin) / horizontal,
+        (maxZ - minZ + 2 * this.orbitMargin) / vertical,
+      );
+      this.orbitTheta = 0;
+      bounds = this.circuitBounds(0);
+      let bestSize = framingSize(bounds);
+      for (let step = -29; step <= 30; step++) {
+        const theta = step * Math.PI / 60;
+        const candidate = this.circuitBounds(theta);
+        const size = framingSize(candidate);
+        if (size < bestSize) {
+          this.orbitTheta = theta;
+          bounds = candidate;
+          bestSize = size;
+        }
+      }
+    }
+    const sinTheta = Math.sin(this.orbitTheta), cosTheta = Math.cos(this.orbitTheta);
+    const sinPhi = Math.sin(this.orbitPhi), cosPhi = Math.cos(this.orbitPhi);
+    this.orbitDirection.set(sinTheta * cosPhi, sinPhi, cosTheta * cosPhi);
+    const { minX, maxX, minZ, maxZ } = bounds;
+    const centerX = (minX + maxX) * 0.5;
+    const centerZ = (minZ + maxZ) * 0.5;
+    const halfWidth = (maxX - minX) * 0.5 + this.orbitMargin;
+    const halfDepth = (maxZ - minZ) * 0.5 + this.orbitMargin;
+    this.orbitTarget.set(centerX * cosTheta + centerZ * sinTheta, 0, -centerX * sinTheta + centerZ * cosTheta);
+    this.orbitRadius = Math.hypot(halfWidth, halfDepth);
+
+    // Test the corners of the footprint in the camera's rotated basis.
+    let distance = 0;
+    for (const y of [0, 10]) {
+      for (const z of [-halfDepth, halfDepth]) {
+        const depth = y * sinPhi + z * cosPhi;
+        const up = y * cosPhi - z * sinPhi;
+        distance = Math.max(distance, depth + Math.max(halfWidth / horizontal, Math.abs(up) / vertical));
+      }
+    }
+    this.orbitFitDistance = distance * 1.025;
+    this.orbitDistance = THREE.MathUtils.clamp(this.orbitFitDistance * zoom, this.orbitMinDistance, this.orbitFitDistance * 4);
+    this.fittedTheta = this.orbitTheta;
+    this.fittedPhi = this.orbitPhi;
+    this.updateZoomButtons();
+  }
+
   setMode(mode) {
     this.mode = mode;
     this.cameraInitialized = false;
-    if (this.scene && this.scene.fog) {
-      this.scene.fog.density = 0.00018;
+    this.pinchSpan = 0;
+    this.domElement.classList.toggle("circuit-camera", mode === "orbit");
+    $("circuitZoomControls").hidden = mode !== "orbit";
+    if (this.isTrackOrbit) {
+      this.resetOrbitView();
+    } else if (this.camera.far !== this.drivingFar) {
+      this.camera.far = this.drivingFar;
+      this.camera.updateProjectionMatrix();
     }
+    this.scene.fog.density = 0.00018;
+  }
+
+  resetOrbitView() {
+    this.resetTrackAngles();
+    this.fitTrack(1, true);
+  }
+
+  resetTrackAngles() {
+    this.orbitTheta = 0;
+    this.orbitPhi = Math.PI / 2 - 0.00001;
+  }
+
+  get isTrackOrbit() {
+    return this.mode === "orbit" || this.mode === "map";
+  }
+
+  get isAerialView() {
+    return this.mode === "aerial" || this.isTrackOrbit;
+  }
+
+  get orbitMinDistance() {
+    return this.mode === "orbit" && !this.editingTrack ? 55 : this.orbitFitDistance * 0.08;
+  }
+
+  updateZoomButtons() {
+    if (this.mode !== "orbit") return;
+    $("btnCircuitZoomIn").disabled = this.orbitDistance <= this.orbitMinDistance;
+    $("btnCircuitZoomOut").disabled = this.orbitDistance >= this.orbitFitDistance * 4;
+  }
+
+  zoomBy(scale) {
+    if (this.locked) return;
+    if (this.mode === "aerial") {
+      this.aerialDistance = THREE.MathUtils.clamp(this.aerialDistance * scale, 22, 135);
+    } else if (this.isTrackOrbit) {
+      this.orbitDistance = THREE.MathUtils.clamp(this.orbitDistance * scale, this.orbitMinDistance, this.orbitFitDistance * 4);
+      this.updateZoomButtons();
+    }
+  }
+
+  resetAerialView() {
+    this.aerialDistance = 46;
+    this.aerialAzimuth = -2.05;
+    this.aerialElevation = THREE.MathUtils.degToRad(59);
   }
 
   bindEvents() {
     this.domElement.addEventListener("mousedown", (e) => {
-      if (this.mode === "orbit" && !this.locked) {
+      if (this.isAerialView && !this.locked && e.button === 0) {
         this.isDragging = true;
         this.prevMouse.x = e.clientX;
         this.prevMouse.y = e.clientY;
@@ -2612,33 +2750,73 @@ class CameraManager3D {
     });
 
     window.addEventListener("mousemove", (e) => {
-      if (this.mode === "orbit" && !this.locked && this.isDragging) {
+      if (this.isAerialView && !this.locked && this.isDragging) {
         const dx = e.clientX - this.prevMouse.x;
         const dy = e.clientY - this.prevMouse.y;
         this.prevMouse.x = e.clientX;
         this.prevMouse.y = e.clientY;
 
-        this.orbitTheta -= dx * 0.006;
-        this.orbitPhi = Math.max(0.01, Math.min(Math.PI / 2.01, this.orbitPhi - dy * 0.006));
+        if (this.mode === "aerial") {
+          this.aerialAzimuth -= dx * 0.006;
+          this.aerialElevation = THREE.MathUtils.clamp(this.aerialElevation - dy * 0.006, 0.48, 1.55);
+        } else {
+          this.orbitTheta -= dx * 0.006;
+          this.orbitPhi = THREE.MathUtils.clamp(this.orbitPhi - dy * 0.006, 0.1, Math.PI / 2 - 0.00001);
+        }
       }
     });
 
+    this.domElement.addEventListener("dblclick", () => {
+      if (this.locked) return;
+      if (this.mode === "aerial") {
+        this.resetAerialView();
+        this.cameraInitialized = false;
+      } else if (this.isTrackOrbit) {
+        this.resetOrbitView();
+      }
+    });
     this.domElement.addEventListener("wheel", (e) => {
-      if (this.mode === "orbit" && !this.locked) {
-        // Unlimited smooth exponential/proportional zoom:
-        // Allows continuous zoom from extreme macro close-up (0.2m) to outer-space orbit (150,000m+)
-        const zoomSpeed = 0.0018;
-        const factor = Math.exp(e.deltaY * zoomSpeed);
-        this.orbitDistance = Math.max(0.2, Math.min(150000, this.orbitDistance * factor));
+      if (this.isAerialView && !this.locked) {
+        e.preventDefault();
+        const units = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1;
+        this.zoomBy(Math.exp(e.deltaY * units * 0.001));
       } else if (this.mode === "chase") {
         this.chaseDistance = Math.max(15, Math.min(60, (this.chaseDistance || 28.0) + e.deltaY * 0.03));
         this.chaseHeight = this.chaseDistance * 0.29;
       }
-    }, { passive: true });
+    }, { passive: false });
+
+    const updatePinch = (e) => {
+      if (this.mode !== "orbit" || this.locked || e.targetTouches.length !== 2) {
+        this.pinchSpan = 0;
+        return;
+      }
+      const a = e.targetTouches[0], b = e.targetTouches[1];
+      const span = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      if (e.type === "touchmove" && this.pinchSpan > 0 && span > 0) {
+        e.preventDefault();
+        this.zoomBy(this.pinchSpan / span);
+      }
+      this.pinchSpan = span;
+    };
+    this.domElement.addEventListener("touchstart", updatePinch);
+    this.domElement.addEventListener("touchmove", updatePinch, { passive: false });
+    this.domElement.addEventListener("touchend", updatePinch);
+    this.domElement.addEventListener("touchcancel", () => { this.pinchSpan = 0; });
+
+    $("btnCircuitZoomIn").addEventListener("click", () => this.zoomBy(0.72));
+    $("btnCircuitZoomOut").addEventListener("click", () => this.zoomBy(1 / 0.72));
+    $("btnCircuitFit").addEventListener("click", () => {
+      if (!this.locked && this.mode === "orbit") this.resetOrbitView();
+    });
   }
 
-  update(carGroup, forwardDir, speed, dt) {
+  update(carGroup, forwardDir, speed, dt, editingTrack = false) {
     const carPos = carGroup.position;
+    if (this.editingTrack !== editingTrack) {
+      this.editingTrack = editingTrack;
+      this.updateZoomButtons();
+    }
 
     if (this.mode === "chase") {
       const chaseOffsetDist = this.chaseDistance || 34.0;
@@ -2706,21 +2884,62 @@ class CameraManager3D {
         this.camera.updateProjectionMatrix();
       }
 
-    } else if (this.mode === "orbit") {
-      const x = Math.sin(this.orbitTheta) * Math.cos(this.orbitPhi) * this.orbitDistance;
-      const z = Math.cos(this.orbitTheta) * Math.cos(this.orbitPhi) * this.orbitDistance;
-      const y = Math.sin(this.orbitPhi) * this.orbitDistance;
+    } else if (this.mode === "aerial") {
+      // Let the helicopter coast through changes in direction while its gimbal
+      // stays aimed at the car and the piece of road immediately ahead.
+      const heading = Math.atan2(forwardDir.x, forwardDir.z);
+      if (!this.cameraInitialized) this.cameraYaw = heading;
+      const turn = heading - this.cameraYaw;
+      this.cameraYaw += Math.atan2(Math.sin(turn), Math.cos(turn)) * (1 - Math.exp(-2.6 * dt));
 
-      this.camera.position.set(x, y, z);
-      this.camera.lookAt(0, 0, 0);
+      const azimuth = this.cameraYaw + this.aerialAzimuth;
+      const distance = this.aerialDistance * (1 + Math.min(Math.abs(speed) / 350, 0.2));
+      const groundDistance = Math.cos(this.aerialElevation) * distance;
+      const travelLead = speed * 0.13;
+      this.desiredPos.set(
+        carPos.x + Math.sin(azimuth) * groundDistance + forwardDir.x * travelLead,
+        carPos.y + Math.sin(this.aerialElevation) * distance,
+        carPos.z + Math.cos(azimuth) * groundDistance + forwardDir.z * travelLead,
+      );
+      if (this.cameraInitialized) {
+        this.currentPos.lerp(this.desiredPos, 1 - Math.exp(-7.5 * dt));
+      } else {
+        this.currentPos.copy(this.desiredPos);
+        this.cameraInitialized = true;
+      }
+      const framingLead = Math.min(distance * 0.14, 4 + Math.abs(speed) * 0.04) * Math.sign(speed || 1);
+      this.desiredLookAt.copy(carPos).addScaledVector(forwardDir, framingLead);
+      this.desiredLookAt.y += 0.4;
+      this.camera.position.copy(this.currentPos);
+      this.camera.lookAt(this.desiredLookAt);
+      if (this.camera.fov !== 36) {
+        this.camera.fov = 36;
+        this.camera.updateProjectionMatrix();
+      }
+
+    } else if (this.isTrackOrbit) {
+      if (this.fittedTheta !== this.orbitTheta || this.fittedPhi !== this.orbitPhi) {
+        this.fitTrack(this.orbitDistance / this.orbitFitDistance);
+      }
+      const zoom = this.orbitDistance / this.orbitFitDistance;
+      const follow = this.mode === "orbit" && !editingTrack
+        ? THREE.MathUtils.smoothstep(1 - zoom, 0.10, 0.66)
+        : 0;
+      this.desiredLookAt.copy(this.orbitTarget).lerp(carPos, follow);
+      this.desiredLookAt.addScaledVector(forwardDir, follow * speed * 0.12);
+      if (follow > 0 && this.cameraInitialized) {
+        this.orbitFocus.lerp(this.desiredLookAt, 1 - Math.exp(-8 * dt));
+      } else {
+        this.orbitFocus.copy(this.desiredLookAt);
+      }
+      this.cameraInitialized = true;
+      this.camera.position.copy(this.orbitFocus).addScaledVector(this.orbitDirection, this.orbitDistance);
+      this.camera.lookAt(this.orbitFocus);
+      this.camera.far = Math.max(35000, this.orbitDistance + this.orbitRadius * 3);
       this.camera.fov = 50;
       this.camera.updateProjectionMatrix();
-
-      // Adaptively scale atmospheric fog density with orbit altitude so high-altitude orbital view never whites out
-      if (this.scene && this.scene.fog) {
-        const baseDensity = 0.00018;
-        this.scene.fog.density = baseDensity * Math.min(1.0, 150.0 / Math.max(150.0, this.orbitDistance));
-      }
+      const overhead = this.mode === "orbit" && this.orbitPhi > 1.3;
+      this.scene.fog.density = overhead ? 0 : Math.min(0.00018, 0.25 / this.orbitDistance);
     }
   }
 }
@@ -3592,6 +3811,8 @@ class RacingGenesisApp {
     this.updateEnvironmentForTrack(this.track.getBoundingRadius(), this.track.totalLength);
     this.car = new RaceCar3D(this.scene);
     this.cameraManager = new CameraManager3D(this.camera, this.renderer.domElement, this.scene);
+    this.cameraManager.setTrack(this.track);
+    this.trackOverview = new TrackOverview($("trackOverviewCanvas"), $("trackOverviewLegend"));
     this.audio = new RacingEngineSound();
 
     // Beta: Secondary Technical Pillars (Smoke/Skid Particles, Opponent AI, Oscilloscope Telemetry)
@@ -3674,7 +3895,11 @@ class RacingGenesisApp {
     this.scene.add(ambient);
 
     const sun = new THREE.DirectionalLight(0xfffbf2, 1.45);
-    sun.position.set(80, 110, 60);
+    this.sun = sun;
+    this.sunOffset = new THREE.Vector3(80, 110, 60);
+    this.shadowRight = new THREE.Vector3(this.sunOffset.z, 0, -this.sunOffset.x).normalize();
+    this.shadowUp = new THREE.Vector3().crossVectors(this.sunOffset, this.shadowRight).normalize();
+    sun.position.copy(this.sunOffset);
     sun.castShadow = true;
     sun.shadow.mapSize.width = 2048;
     sun.shadow.mapSize.height = 2048;
@@ -3685,7 +3910,7 @@ class RacingGenesisApp {
     sun.shadow.camera.top = 120;
     sun.shadow.camera.bottom = -120;
     sun.shadow.bias = -0.0004;
-    this.scene.add(sun);
+    this.scene.add(sun, sun.target);
   }
 
   setupRealisticWorld() {
@@ -3712,6 +3937,7 @@ class RacingGenesisApp {
 
   updateEnvironmentForTrack(boundingRadius, trackLength) {
     if (!this.treeGroup || !this.mountainGroup) return;
+    if (this.cameraManager && !this.isDraggingHandle) this.cameraManager.setTrack(this.track);
 
     // Clear previous dynamic trees and mountains
     while (this.treeGroup.children.length > 0) {
@@ -3869,9 +4095,8 @@ class RacingGenesisApp {
 
     const togglePanel = (panel, btn) => {
       if (!panel) return;
-      panel.classList.toggle("collapsed");
-      const isCollapsed = panel.classList.contains("collapsed");
-      if (btn) btn.classList.toggle("active", !isCollapsed);
+      this.setDrawerCollapsed(panel, btn, !panel.classList.contains("collapsed"));
+      if (this.cameraManager.isTrackOrbit) this.cameraManager.fitTrack();
     };
 
     if (btnToggleLeft) btnToggleLeft.addEventListener("click", () => togglePanel(leftPanel, btnToggleLeft));
@@ -3955,12 +4180,11 @@ class RacingGenesisApp {
 
     // Camera Switcher
     document.querySelectorAll(".cam-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        document.querySelectorAll(".cam-btn").forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
-        this.cameraManager.setMode(btn.dataset.cam);
-      });
+      btn.addEventListener("click", () => this.setCamera(btn.dataset.cam));
     });
+    $("btnAerialFollow").addEventListener("click", () => this.setCamera("aerial"));
+    $("btnAerialCircuit").addEventListener("click", () => this.setCamera("orbit"));
+    $("btnAerialMap").addEventListener("click", () => this.setCamera("map"));
 
     // Sliders & Track Length (1,000m - 10,000m)
     const syncOut = () => {
@@ -4035,10 +4259,7 @@ class RacingGenesisApp {
     $("btnEditHandles").addEventListener("click", () => {
       this.track.toggleEditHandles();
       if (this.track.editHandlesVisible && this.cameraManager.mode === "chase") {
-        document.querySelectorAll(".cam-btn").forEach((b) => b.classList.remove("active"));
-        const orbitBtn = document.querySelector('.cam-btn[data-cam="orbit"]');
-        if (orbitBtn) orbitBtn.classList.add("active");
-        this.cameraManager.setMode("orbit");
+        this.setCamera("orbit");
       }
     });
 
@@ -4224,10 +4445,7 @@ class RacingGenesisApp {
         }
       } else if (e.code === "KeyC") {
         const nextCam = this.cameraManager.mode === "chase" ? "hood" : "chase";
-        this.cameraManager.setMode(nextCam);
-        document.querySelectorAll(".cam-btn").forEach((b) => {
-          b.classList.toggle("active", b.dataset.cam === nextCam);
-        });
+        this.setCamera(nextCam);
       } else if (e.code === "KeyM") {
         const on = this.audio.toggle();
         $("btnAudio").textContent = on ? "🔊 Audio: ON" : "🔊 Audio: OFF";
@@ -4245,10 +4463,47 @@ class RacingGenesisApp {
       this.camera.aspect = window.innerWidth / window.innerHeight;
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(window.innerWidth, window.innerHeight);
+      this.cameraManager.fitTrack(1, true);
     });
 
     syncOut();
     this.updateHUD();
+  }
+
+  setDrawerCollapsed(panel, button, collapsed) {
+    panel.classList.toggle("collapsed", collapsed);
+    button?.classList.toggle("active", !collapsed);
+    button?.setAttribute("aria-expanded", String(!collapsed));
+    panel.inert = collapsed;
+  }
+
+  setCamera(mode) {
+    const circuitShot = mode === "orbit" && !this.track.editHandlesVisible;
+    if (circuitShot && !this.circuitDrawers) {
+      this.circuitDrawers = [[$("leftPanel"), $("btnToggleLeft")], [$("rightPanel"), $("btnToggleRight")]]
+        .map(([panel, button]) => {
+          const collapsed = panel.classList.contains("collapsed");
+          this.setDrawerCollapsed(panel, button, true);
+          return { panel, button, collapsed };
+        });
+    } else if (!circuitShot && this.circuitDrawers) {
+      for (const { panel, button, collapsed } of this.circuitDrawers) {
+        this.setDrawerCollapsed(panel, button, collapsed);
+      }
+      this.circuitDrawers = null;
+    }
+    this.cameraManager.setMode(mode);
+    $("liveDeltaBadge").hidden = circuitShot;
+    const headerMode = this.cameraManager.isAerialView ? "aerial" : mode;
+    document.querySelectorAll(".cam-btn").forEach(btn => {
+      const active = btn.dataset.cam === headerMode;
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-pressed", String(active));
+    });
+    $("aerialControls").hidden = !this.cameraManager.isAerialView;
+    $("btnAerialFollow").setAttribute("aria-pressed", String(mode === "aerial"));
+    $("btnAerialCircuit").setAttribute("aria-pressed", String(mode === "orbit"));
+    $("btnAerialMap").setAttribute("aria-pressed", String(mode === "map"));
   }
 
   setupHandleInteractions() {
@@ -4331,6 +4586,7 @@ class RacingGenesisApp {
         this.isDraggingHandle = false;
         this.activeHandleIndex = null;
         this.cameraManager.locked = false;
+        this.cameraManager.setTrack(this.track);
         this.renderer.domElement.style.cursor = "default";
         const curLen = Math.round(this.track.totalLength || 5000);
         this.track.targetLength = curLen;
@@ -4849,7 +5105,7 @@ class RacingGenesisApp {
         clearTimeout(this._colTimer);
         this._colTimer = setTimeout(() => colBadge.classList.remove("visible"), 650);
       }
-      if (this.cameraManager) {
+      if (this.cameraManager && !this.cameraManager.isAerialView) {
         this.cameraManager.camera.position.y += (Math.random() - 0.5) * 0.16;
       }
       if (this.audio) this.audio.playImpact(1.5);
@@ -5302,6 +5558,22 @@ class RacingGenesisApp {
     document.body.removeChild(link);
   }
 
+  updateAerialShadows() {
+    // Move the shadow map with the car in whole light-space texels.
+    if (this.cameraManager.mode === "aerial" || this.cameraManager.mode === "orbit") {
+      const { camera, mapSize } = this.sun.shadow;
+      const texel = (camera.right - camera.left) / mapSize.x;
+      const target = this.sun.target.position.copy(this.car.carGroup.position).setY(0);
+      const across = target.dot(this.shadowRight);
+      const up = target.dot(this.shadowUp);
+      target.addScaledVector(this.shadowRight, Math.round(across / texel) * texel - across);
+      target.addScaledVector(this.shadowUp, Math.round(up / texel) * texel - up);
+    } else {
+      this.sun.target.position.set(0, 0, 0);
+    }
+    this.sun.position.copy(this.sun.target.position).add(this.sunOffset);
+  }
+
   animate() {
     this.stepFrame(1 / 90);
   }
@@ -5355,14 +5627,18 @@ class RacingGenesisApp {
     this.car.updateVisuals(this.speed, this.steerAngle, isBraking, dt);
 
     // 5. Update Braking Zone Overlay
-    this.track.updateBrakingZone(this.progress);
+    const showBrakingZone = this.cameraManager.mode !== "orbit";
+    this.track.brakingZoneMesh.visible = showBrakingZone;
+    if (showBrakingZone) this.track.updateBrakingZone(this.progress);
 
     // 6. Update Handle Scales
     this.track.updateHandleScales(this.camera);
 
     // 7. Update Camera (Chase camera locks directly behind car's actual forward chassis heading)
     this.car.carGroup.getWorldDirection(_camForwardVec);
-    this.cameraManager.update(this.car.carGroup, _camForwardVec, this.speed, dt);
+    this.cameraManager.update(this.car.carGroup, _camForwardVec, this.speed, dt, this.track.editHandlesVisible);
+    this.trackOverview.draw(this.track, this.cameraManager);
+    this.updateAerialShadows();
 
     // Driver helmet & Halo central pillar visibility: hide in Cockpit 3D POV so track and road ahead are completely unobstructed
     const isCockpit = (this.cameraManager.mode === "hood");
@@ -5393,7 +5669,7 @@ class RacingGenesisApp {
           clearTimeout(this._colTimer);
           this._colTimer = setTimeout(() => colBadge.classList.remove("visible"), 650);
         }
-        if (this.cameraManager) {
+        if (this.cameraManager && !this.cameraManager.isAerialView) {
           this.cameraManager.camera.position.y += (Math.random() - 0.5) * 0.12;
         }
         if (this.audio) this.audio.playImpact(1.4);

@@ -8,11 +8,18 @@
     <meta http-equiv="Expires" content="0" />
     <meta name="theme-color" content="#070b14" />
     <title>Racing Genesis - F1 Pro Simulator (Feature Complete Build v8.0)</title>
-    <link rel="stylesheet" href="style.css?v=8.0" />
+    <link rel="stylesheet" href="style.css?v=8.0.1" />
   </head>
   <body>
     <!-- 3D WebGL Canvas Layer -->
     <div id="webgl-container"></div>
+    <canvas id="trackOverviewCanvas" class="track-overview-canvas" aria-hidden="true" hidden></canvas>
+    <div id="trackOverviewLegend" class="track-overview-legend" aria-label="Track guidance" hidden>
+      <span class="overview-straight">Straight</span>
+      <span class="overview-corner">Corner</span>
+      <span class="overview-braking">Braking zone</span>
+    </div>
+
 
     <!-- Floating Windows 11 Fluent Panel Toggle Buttons -->
     <button id="btnToggleLeft" class="win11-tab-toggle left" title="Toggle Track Editor Panel ([)">
@@ -41,7 +48,7 @@
           <div class="camera-switcher win11-segmented">
             <button class="cam-btn active" data-cam="chase">3rd Person</button>
             <button class="cam-btn" data-cam="hood">Cockpit 3D</button>
-            <button class="cam-btn" data-cam="orbit">Top / Orbit</button>
+            <button class="cam-btn" data-cam="aerial" title="Helicopter camera, full circuit, and map">Top / Orbit</button>
           </div>
         </div>
 
@@ -185,6 +192,11 @@
 
         <!-- Center: Dynamic Driver HUD Overlay -->
         <div class="center-hud">
+          <div id="aerialControls" class="aerial-controls" role="group" aria-label="Aerial camera" hidden>
+            <button id="btnAerialFollow" type="button" aria-pressed="true" title="Follow the car with a stabilized aerial camera">Helicopter</button>
+            <button id="btnAerialCircuit" type="button" aria-pressed="false" title="See the entire track from directly overhead. Zoom in to follow the car.">Full circuit</button>
+            <button id="btnAerialMap" type="button" aria-pressed="false" title="Show the circuit map and braking guidance">Map</button>
+          </div>
           <!-- Official F1 5-Light Starting Gantry HUD Overlay -->
           <div class="f1-start-lights-overlay" id="f1StartLightsOverlay">
             <div class="lights-housing">
@@ -337,6 +349,13 @@
             </div>
           </div>
         </aside>
+      </div>
+
+      <div id="circuitZoomControls" class="circuit-zoom-controls" role="group" aria-label="Full circuit zoom" aria-describedby="circuitZoomHint" hidden>
+        <span id="circuitZoomHint">Scroll or pinch to zoom</span>
+        <button id="btnCircuitZoomOut" type="button" aria-label="Zoom out" title="Zoom out">&minus;</button>
+        <button id="btnCircuitZoomIn" type="button" aria-label="Zoom in" title="Zoom in">+</button>
+        <button id="btnCircuitFit" type="button" title="Restore the full overhead view">Fit track</button>
       </div>
 
       <!-- Bottom Playback Dock (Windows 11 Fluent Command Bar) -->
@@ -493,6 +512,6 @@
     </div>
 
     <!-- Application Script (ES Module with cache-busting) -->
-    <script type="module" src="app.js?v=8.0"></script>
+    <script type="module" src="app.js?v=8.0.1"></script>
   </body>
 </html>
