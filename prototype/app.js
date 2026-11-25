@@ -14,6 +14,28 @@
  */
 
 import * as THREE from "./three.module.js";
+import { TrackOverview } from "./track-overview.js";
+import { TrackCrowd } from "./track-crowd.js";
+import { sculptBody, shapeAerofoil, shapePanel, shapeSlick } from "./race-car-geometry.js";
+
+// Dispose an owned subtree once per resource, including nested meshes and textures.
+function disposeGroupContents(group, ownedMaterials = []) {
+  const geometries = new Set(), materials = new Set(ownedMaterials.filter(Boolean)), textures = new Set();
+  group.traverse(object => {
+    if (object.isInstancedMesh) object.dispose();
+    if (object.geometry) geometries.add(object.geometry);
+    for (const material of [].concat(object.material || [])) {
+      materials.add(material);
+      for (const value of Object.values(material)) {
+        if (value && value.isTexture) textures.add(value);
+      }
+    }
+  });
+  group.clear();
+  textures.forEach(texture => texture.dispose());
+  materials.forEach(material => material.dispose());
+  geometries.forEach(geometry => geometry.dispose());
+}
 
 // Unit conversions
 const MS_TO_MPH = 2.23694;
@@ -100,31 +122,27 @@ function createSkyGradientTexture() {
 }
 
 
+function paintChecks(ctx, x, y, width, height, cols, rows, light = "#f4f8fc", dark = "#121c29") {
+  const cellWidth = width / cols;
+  const cellHeight = height / rows;
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      ctx.fillStyle = (row + col) % 2 ? dark : light;
+      ctx.fillRect(x + col * cellWidth, y + row * cellHeight, cellWidth, cellHeight);
+    }
+  }
+}
+
 function createCheckeredFinishTexture() {
   const canvas = document.createElement("canvas");
   canvas.width = 512;
   canvas.height = 128;
   const ctx = canvas.getContext("2d");
-
-  const rows = 4;
-  const cols = 16;
-  const sqW = 512 / cols;
-  const sqH = 128 / rows;
-
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      ctx.fillStyle = (r + c) % 2 === 0 ? "#ffffff" : "#111418";
-      ctx.fillRect(c * sqW, r * sqH, sqW, sqH);
-    }
-  }
-
-  ctx.fillStyle = "#ffd200";
-  ctx.fillRect(0, 0, 512, 4);
-  ctx.fillRect(0, 124, 512, 4);
-
+  paintChecks(ctx, 0, 0, 512, 128, 12, 2);
+  ctx.fillStyle = "#62e3df";
+  ctx.fillRect(0, 60, 512, 8);
   const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.ClampToEdgeWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
 
@@ -134,80 +152,40 @@ function createGantryBannerTexture() {
   canvas.height = 256;
   const ctx = canvas.getContext("2d");
 
-  ctx.fillStyle = "#0c1018";
+  const background = ctx.createLinearGradient(0, 0, 0, 256);
+  background.addColorStop(0, "#263849");
+  background.addColorStop(1, "#0b141e");
+  ctx.fillStyle = background;
   ctx.fillRect(0, 0, 1024, 256);
+  ctx.fillStyle = "#62e3df";
+  ctx.fillRect(0, 0, 1024, 8);
+  ctx.fillRect(0, 248, 1024, 8);
 
-  ctx.strokeStyle = "#0078d4";
-  ctx.lineWidth = 8;
-  ctx.strokeRect(6, 6, 1012, 244);
-
-  ctx.fillStyle = "#60cdff";
-  ctx.font = "bold 32px 'Segoe UI', sans-serif";
+  paintChecks(ctx, 36, 68, 120, 120, 4, 4);
+  paintChecks(ctx, 868, 68, 120, 120, 4, 4);
   ctx.textAlign = "center";
-  ctx.fillText("CIRCUIT DE RACING GENESIS", 512, 60);
-
-  ctx.fillStyle = "#ffffff";
-  ctx.font = "900 76px 'Segoe UI', sans-serif";
-  ctx.fillText("START / FINISH", 512, 145);
-
-  ctx.fillStyle = "#ffaa00";
-  ctx.font = "bold 28px monospace";
-  ctx.fillText("OFFICIAL FIA VERIFIED TIMING TRAP \u2022 SECTOR 1", 512, 210);
+  ctx.fillStyle = "#62e3df";
+  ctx.font = "700 35px 'Segoe UI', sans-serif";
+  ctx.fillText("RACING GENESIS", 512, 81);
+  ctx.fillStyle = "#f4f8fc";
+  ctx.font = "900 90px 'Segoe UI', sans-serif";
+  ctx.fillText("START / FINISH", 512, 187, 670);
 
   const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
 
 function createFinishFlagTexture() {
   const canvas = document.createElement("canvas");
-  canvas.width = 1024;
-  canvas.height = 512;
+  canvas.width = 512;
+  canvas.height = 256;
   const ctx = canvas.getContext("2d");
-
-  // Bold racing checkered background grid
-  const checkRows = 6;
-  const checkCols = 16;
-  const cW = 1024 / checkCols;
-  const cH = 512 / checkRows;
-  for (let r = 0; r < checkRows; r++) {
-    for (let c = 0; c < checkCols; c++) {
-      ctx.fillStyle = (r + c) % 2 === 0 ? "#ffffff" : "#0d1117";
-      ctx.fillRect(c * cW, r * cH, cW + 1, cH + 1);
-    }
-  }
-
-  // Central high-contrast badge banner
-  ctx.fillStyle = "rgba(10, 14, 22, 0.94)";
-  ctx.fillRect(50, 70, 924, 372);
-
-  // Vibrant gold border around central banner
-  ctx.strokeStyle = "#ffd700";
-  ctx.lineWidth = 14;
-  ctx.strokeRect(50, 70, 924, 372);
-
-  // Red racing inner accent
-  ctx.strokeStyle = "#ff1744";
-  ctx.lineWidth = 5;
-  ctx.strokeRect(66, 86, 892, 340);
-
-  // Huge bold "FINISH" text
-  ctx.fillStyle = "rgba(0,0,0,0.85)";
-  ctx.font = "900 132px 'Segoe UI', Arial Black, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("FINISH", 512 + 6, 238 + 6);
-
-  ctx.fillStyle = "#ffffff";
-  ctx.fillText("FINISH", 512, 238);
-
-  // Checkered icon & subtext
-  ctx.fillStyle = "#ffd700";
-  ctx.font = "bold 42px 'Segoe UI', sans-serif";
-  ctx.fillText("🏁  FINAL SECTOR  🏁", 512, 356);
-
+  paintChecks(ctx, 0, 0, 512, 256, 8, 4);
+  ctx.fillStyle = "#62e3df";
+  ctx.fillRect(0, 0, 8, 256);
   const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.ClampToEdgeWrapping;
-  texture.wrapT = THREE.ClampToEdgeWrapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
   return texture;
 }
 
@@ -717,15 +695,7 @@ class Track3D {
     this.cylindricalColliders = [];
     this.boxColliders = [];
 
-    while (this.trackGroup.children.length > 0) {
-      const child = this.trackGroup.children[0];
-      this.trackGroup.remove(child);
-      if (child.geometry) child.geometry.dispose();
-      if (child.material) {
-        if (Array.isArray(child.material)) child.material.forEach((m) => m.dispose());
-        else child.material.dispose();
-      }
-    }
+    disposeGroupContents(this.trackGroup, [this.matLightOff, this.matLightRed, this.matLightGreen]);
 
     this.curve = new THREE.CatmullRomCurve3(this.controlPoints, true, "centripetal", 0.5);
     this.totalLength = Math.round(this.curve.getLength());
@@ -1092,66 +1062,59 @@ class Track3D {
 
   buildStartGantry() {
     const s0 = this.samples[0];
-    const halfW = this.roadWidth / 2 + 2.8;
-
-    // Gantry Group perfectly aligned with track frame
-    // Local X runs across track (along normal); Local Z runs along track (along tangent)
     const gantryGroup = new THREE.Group();
-    gantryGroup.position.copy(s0.position);
-    gantryGroup.rotation.y = Math.atan2(s0.tangent.x, s0.tangent.z);
+    gantryGroup.name = "Start / Finish Gantry";
+    // Place the bridge just ahead of the timing line so it clears the car on the grid.
+    const bridgeProgress = 6 / this.totalLength;
+    this.curve.getPointAt(bridgeProgress, gantryGroup.position);
+    const bridgeTangent = this.curve.getTangentAt(bridgeProgress, _scratchTangent);
+    gantryGroup.rotation.y = Math.atan2(bridgeTangent.x, bridgeTangent.z);
 
-    const metalMat = new THREE.MeshStandardMaterial({ color: 0x222a36, metalness: 0.85, roughness: 0.25 });
-    const trussMat = new THREE.MeshStandardMaterial({ color: 0x364354, metalness: 0.9, roughness: 0.2 });
+    const pillarX = this.roadWidth / 2 + 2.8;
+    const beamWidth = pillarX * 2 + 0.85;
+    const structure = new THREE.MeshStandardMaterial({ color: 0x263849, metalness: 0.25, roughness: 0.55 });
+    const baseMaterial = new THREE.MeshStandardMaterial({ color: 0xa7b5c2, roughness: 0.82 });
+    const accent = new THREE.MeshBasicMaterial({ color: 0x62e3df, toneMapped: false });
+    const signalHousing = new THREE.MeshStandardMaterial({ color: 0x121c29, roughness: 0.65 });
+    const box = (name, width, height, depth, material, x, y, z) => {
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material);
+      mesh.name = name;
+      mesh.position.set(x, y, z);
+      gantryGroup.add(mesh);
+      return mesh;
+    };
 
-    // Left and Right Pillars (Spanning horizontally across track at X = -halfW and +halfW)
-    const pillarGeom = new THREE.BoxGeometry(0.75, 8.5, 0.75);
-    const leftPillar = new THREE.Mesh(pillarGeom, metalMat);
-    leftPillar.position.set(-halfW, 4.25, 0);
-    leftPillar.castShadow = true;
-    gantryGroup.add(leftPillar);
-
-    const rightPillar = new THREE.Mesh(pillarGeom, metalMat);
-    rightPillar.position.set(halfW, 4.25, 0);
-    rightPillar.castShadow = true;
-    gantryGroup.add(rightPillar);
-
-    // Register Gantry Pillars as solid physical cylinder colliders
-    const leftPillarPos = s0.position.clone().addScaledVector(s0.normal, -halfW);
-    const rightPillarPos = s0.position.clone().addScaledVector(s0.normal, halfW);
-    this.cylindricalColliders.push({ x: leftPillarPos.x, z: leftPillarPos.z, radius: 1.15, name: "Gantry Pillar Left" });
-    this.cylindricalColliders.push({ x: rightPillarPos.x, z: rightPillarPos.z, radius: 1.15, name: "Gantry Pillar Right" });
-
-    // Double Overhead Horizontal Beam spanning between pillars across X axis
-    const beamLength = halfW * 2 + 1.2;
-    const topBeamGeom = new THREE.BoxGeometry(beamLength, 0.85, 0.85);
-    const topBeam = new THREE.Mesh(topBeamGeom, metalMat);
-    topBeam.position.set(0, 8.1, 0);
-    gantryGroup.add(topBeam);
-
-    const lowerBeamGeom = new THREE.BoxGeometry(beamLength, 0.65, 0.65);
-    const lowerBeam = new THREE.Mesh(lowerBeamGeom, trussMat);
-    lowerBeam.position.set(0, 5.8, 0);
-    gantryGroup.add(lowerBeam);
-
-    // Diagonal truss braces
-    for (let x = -halfW + 2; x < halfW - 1; x += 3.2) {
-      const braceGeom = new THREE.CylinderGeometry(0.06, 0.06, 2.5, 8);
-      const brace = new THREE.Mesh(braceGeom, trussMat);
-      brace.position.set(x, 6.95, 0);
-      brace.rotation.z = Math.PI / 4;
-      gantryGroup.add(brace);
+    for (const side of [-1, 1]) {
+      const x = side * pillarX;
+      box("Pylon base", 1.45, 0.45, 1.45, baseMaterial, x, 0.225, 0);
+      box("Gantry pylon", 0.88, 7.15, 0.86, structure, x, 3.575, 0).castShadow = true;
+      const center = gantryGroup.localToWorld(new THREE.Vector3(x, 0, 0));
+      this.cylindricalColliders.push({
+        x: center.x,
+        z: center.z,
+        radius: 1.15,
+        name: side < 0 ? "Gantry Pillar Left" : "Gantry Pillar Right",
+      });
+      box("Pylon accent", 0.12, 5.7, 0.04, accent, x, 3.65, -0.45);
+      box("Timing marker", 0.46, 1.1, 0.54, structure, side * (this.roadWidth / 2 + 1.7), 0.55, 0);
+      box("Timing marker lens", 0.48, 0.18, 0.56, accent, side * (this.roadWidth / 2 + 1.7), 1.06, 0);
     }
 
-    // High-Tech Digital LED Timing Billboard across the gantry
-    const bannerTex = createGantryBannerTexture();
-    const bannerMat = new THREE.MeshBasicMaterial({ map: bannerTex });
-    const bannerGeom = new THREE.BoxGeometry(Math.min(18, halfW * 1.7), 1.8, 0.2);
-    const banner = new THREE.Mesh(bannerGeom, bannerMat);
-    banner.position.set(0, 6.95, 0.15);
-    gantryGroup.add(banner);
+    box("Gantry crossbeam", beamWidth, 2.2, 0.96, structure, 0, 6.65, 0);
+    box("Upper accent", beamWidth + 0.1, 0.08, 1.02, accent, 0, 7.81, 0);
+    box("Lower rail", beamWidth + 0.1, 0.18, 1.02, baseMaterial, 0, 5.45, 0);
 
-    // Official F1 5-Light Starting Signal Pod with Dynamic Shading Materials
-    const lightBoxMat = new THREE.MeshStandardMaterial({ color: 0x0a0c10, metalness: 0.85, roughness: 0.3 });
+    const bannerMat = new THREE.MeshBasicMaterial({ map: createGantryBannerTexture(), toneMapped: false });
+    const bannerGeom = new THREE.PlaneGeometry(Math.min(beamWidth - 1.3, 12.4), 2.04);
+    for (const side of [-1, 1]) {
+      const banner = new THREE.Mesh(bannerGeom, bannerMat);
+      banner.name = side < 0 ? "Start / Finish approach sign" : "Start / Finish reverse sign";
+      banner.position.set(0, 6.65, side * 0.49);
+      banner.rotation.y = side < 0 ? Math.PI : 0;
+      gantryGroup.add(banner);
+    }
+
+    // Keep the five race signals centered below the sign and facing the grid.
     this.matLightOff = new THREE.MeshStandardMaterial({ color: 0x141820, roughness: 0.85, metalness: 0.2 });
     this.matLightRed = new THREE.MeshStandardMaterial({
       color: 0xff1744,
@@ -1166,61 +1129,53 @@ class Track3D {
       roughness: 0.1,
     });
 
-    const lightBoxGeom = new THREE.BoxGeometry(4.2, 0.7, 0.35);
-    const lightBox = new THREE.Mesh(lightBoxGeom, lightBoxMat);
-    lightBox.position.set(0, 5.2, -0.4);
-    gantryGroup.add(lightBox);
-
+    box("Start light housing", 4.28, 0.78, 0.4, signalHousing, 0, 5.04, -0.2);
     this.startLightMeshes = [];
+    const lens = new THREE.CylinderGeometry(0.14, 0.14, 0.09, 16).rotateX(Math.PI / 2);
     for (let k = -2; k <= 2; k++) {
-      const ledGeom = new THREE.CylinderGeometry(0.14, 0.14, 0.1, 16);
-      ledGeom.rotateX(Math.PI / 2);
-      const topLed = new THREE.Mesh(ledGeom, this.matLightOff);
-      topLed.position.set(k * 0.75, 5.35, -0.55);
-      gantryGroup.add(topLed);
-
-      const botLed = new THREE.Mesh(ledGeom, this.matLightOff);
-      botLed.position.set(k * 0.75, 5.05, -0.55);
-      gantryGroup.add(botLed);
-
-      this.startLightMeshes.push({ top: topLed, bot: botLed });
+      const top = new THREE.Mesh(lens, this.matLightOff);
+      const bot = new THREE.Mesh(lens, this.matLightOff);
+      top.position.set(k * 0.75, 5.19, -0.43);
+      bot.position.set(k * 0.75, 4.89, -0.43);
+      gantryGroup.add(top, bot);
+      this.startLightMeshes.push({ top, bot });
     }
 
-    // Checkered Finish Line (Fixed 100% horizontally across track width!)
-    const finishGeom = new THREE.PlaneGeometry(this.roadWidth * 0.98, 2.4);
-    const finishMat = new THREE.MeshBasicMaterial({
-      map: createCheckeredFinishTexture(),
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.96,
-      polygonOffset: true,
-      polygonOffsetFactor: -3,
-      polygonOffsetUnits: -3,
-    });
-    const finishMesh = new THREE.Mesh(finishGeom, finishMat);
-    finishMesh.rotation.x = -Math.PI / 2;
-    finishMesh.position.set(0, 0.035, 0); // Flat on track asphalt in local frame
-    gantryGroup.add(finishMesh);
+    const finish = new THREE.Mesh(
+      new THREE.PlaneGeometry(this.roadWidth, 2.1),
+      new THREE.MeshBasicMaterial({ map: createCheckeredFinishTexture(), toneMapped: false }),
+    );
+    finish.name = "Start / Finish timing stripe";
+    finish.geometry.rotateX(-Math.PI / 2);
+    finish.rotation.y = Math.atan2(s0.tangent.x, s0.tangent.z);
+    finish.position.copy(s0.position);
+    finish.position.y += 0.035;
 
-    // 6 Staggered Formula 1 Starting Grid Boxes on approach
-    const gridBoxMat = new THREE.MeshBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.85,
-      polygonOffset: true,
-      polygonOffsetFactor: -4,
-      polygonOffsetUnits: -4,
-    });
-    for (let g = 1; g <= 6; g++) {
-      const side = g % 2 === 1 ? -1 : 1;
-      const boxLineGeom = new THREE.PlaneGeometry(2.4, 0.2);
-      const boxLine = new THREE.Mesh(boxLineGeom, gridBoxMat);
-      boxLine.rotation.x = -Math.PI / 2;
-      boxLine.position.set(side * (this.roadWidth * 0.22), 0.032, -g * 7.5);
-      gantryGroup.add(boxLine);
+    const paint = new THREE.MeshBasicMaterial({ color: 0xf4f8fc, toneMapped: false });
+    const crossbar = new THREE.PlaneGeometry(2.55, 0.13).rotateX(-Math.PI / 2);
+    const sideBar = new THREE.PlaneGeometry(0.13, 2).rotateX(-Math.PI / 2);
+    const gridPositions = new THREE.Group();
+    gridPositions.name = "Starting grid";
+    for (let index = 1; index <= 6; index++) {
+      const grid = new THREE.Group();
+      const side = index % 2 ? -1 : 1;
+      const progress = 1 - index * 8 / this.totalLength;
+      const tangent = this.curve.getTangentAt(progress, _scratchTangent);
+      const normal = _scratchNormal.set(-tangent.z, 0, tangent.x).normalize();
+      this.curve.getPointAt(progress, grid.position);
+      grid.position.addScaledVector(normal, side * this.roadWidth * 0.23);
+      grid.position.y += 0.03;
+      grid.rotation.y = Math.atan2(tangent.x, tangent.z);
+      const front = new THREE.Mesh(crossbar, paint);
+      const left = new THREE.Mesh(sideBar, paint);
+      const right = new THREE.Mesh(sideBar, paint);
+      front.position.z = 1;
+      left.position.x = -1.21;
+      right.position.x = 1.21;
+      grid.add(front, left, right);
+      gridPositions.add(grid);
     }
-
-    this.trackGroup.add(gantryGroup);
+    this.trackGroup.add(gantryGroup, finish, gridPositions);
   }
 
   setGantryLights(mode, redCount = 0) {
@@ -1349,10 +1304,9 @@ class Track3D {
     finial.position.set(leftX - 0.25, 7.6, 0);
     flagGroup.add(finial);
 
-    // 4. Large Animated 3D Waving Finish Flag ("FINISH")
-    // Width 5.0m, Height 2.8m, angled facing incoming cars
-    const flagW = 5.0;
-    const flagH = 2.8;
+    // Double-sided checkered cloth remains readable from either direction.
+    const flagW = 3.8;
+    const flagH = 1.9;
     const flagGeom = new THREE.PlaneGeometry(flagW, flagH, 36, 18);
     // Anchor left edge at pole (x = 0 at pole, extends towards +X)
     flagGeom.translate(flagW / 2, 0, 0);
@@ -1372,6 +1326,7 @@ class Track3D {
 
     this.finishFlagMesh = flagMesh;
     this.flagGeom = flagGeom;
+    this.flagWidth = flagW;
     this.flagWaveTime = 0;
 
     this.trackGroup.add(flagGroup);
@@ -1390,7 +1345,7 @@ class Track3D {
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i);
       const y = pos.getY(i);
-      const ratio = Math.max(0, x / 5.0);
+      const ratio = Math.max(0, x / this.flagWidth);
       const wave = Math.sin(x * 2.2 - time) * ratio * waveAmp
                  + Math.cos(y * 2.8 + time * 0.75) * (ratio * ratio) * (waveAmp * 0.4);
       pos.setZ(i, wave);
@@ -1410,7 +1365,7 @@ class Track3D {
   }
 
   buildAudienceAndGrandstands() {
-    this.animatedSpectators = [];
+    this.crowd = new TrackCrowd();
 
     // Team shirt colors for diverse spectator crowd (Ultra-Vibrant)
     const teamColors = [
@@ -1424,77 +1379,20 @@ class Track3D {
       0x7c4dff, // Purple
     ];
 
-    const spectatorMats = teamColors.map(
-      (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.6, metalness: 0.1 })
-    );
-    const skinMat = new THREE.MeshStandardMaterial({ color: 0xf5cba7, roughness: 0.8 });
-    const whiteCapMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 });
-    const whiteMat = whiteCapMat;
+    const whiteMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.4 });
     const seatMat = new THREE.MeshStandardMaterial({ color: 0x0d47a1, roughness: 0.6 });
     const canopyMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5, side: THREE.DoubleSide });
     const frameMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.85, roughness: 0.25 });
     const fenceMat = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.3, roughness: 0.4 });
     const grassMoundMat = new THREE.MeshStandardMaterial({ color: 0x2e7d32, roughness: 0.95 });
 
-    const createSpectator = (isSeated = false) => {
-      const person = new THREE.Group();
-      const cIdx = Math.floor(Math.random() * spectatorMats.length);
-      const shirtMat = spectatorMats[cIdx];
-
-      // Human scale: total height ~ 1.75m
-      const bodyH = isSeated ? 0.65 : 0.78;
-      const bodyGeom = new THREE.BoxGeometry(0.46, bodyH, 0.28);
-      const body = new THREE.Mesh(bodyGeom, shirtMat);
-      body.position.y = bodyH / 2;
-      person.add(body);
-
-      // Head
-      const headGeom = new THREE.SphereGeometry(0.18, 10, 10);
-      const head = new THREE.Mesh(headGeom, skinMat);
-      head.position.y = bodyH + 0.2;
-      person.add(head);
-
-      // Cap
-      const capGeom = new THREE.CylinderGeometry(0.19, 0.19, 0.08, 10);
-      const cap = new THREE.Mesh(capGeom, Math.random() > 0.3 ? shirtMat : whiteCapMat);
-      cap.position.y = bodyH + 0.32;
-      person.add(cap);
-
-      // Waving Arm
-      const armPivot = new THREE.Group();
-      armPivot.position.set(0.26, bodyH * 0.85, 0);
-      const armGeom = new THREE.CylinderGeometry(0.065, 0.065, 0.55, 6);
-      const arm = new THREE.Mesh(armGeom, shirtMat);
-      arm.position.y = 0.28;
-      armPivot.add(arm);
-
-      // Cheering Flag in hand
-      if (Math.random() > 0.45) {
-        const flagStick = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.8, 4), frameMat);
-        flagStick.position.set(0.08, 0.55, 0);
-        armPivot.add(flagStick);
-
-        const miniFlagGeom = new THREE.PlaneGeometry(0.42, 0.28);
-        const miniFlagMat = new THREE.MeshBasicMaterial({
-          color: teamColors[cIdx],
-          side: THREE.DoubleSide,
-        });
-        const miniFlag = new THREE.Mesh(miniFlagGeom, miniFlagMat);
-        miniFlag.position.set(0.26, 0.75, 0);
-        armPivot.add(miniFlag);
-      }
-
-      armPivot.rotation.z = -0.6 - Math.random() * 0.6;
-      armPivot.rotation.x = (Math.random() - 0.5) * 0.4;
-      person.add(armPivot);
-
-      person.seed = Math.random() * 100;
-      person.wavingArm = armPivot;
-      person.baseY = 0;
-      this.animatedSpectators.push(person);
-
-      return person;
-    };
+    const createSpectator = (x, y, z, side) => ({
+      x, y, z, heading: -side * Math.PI / 2,
+      shirt: teamColors[Math.floor(Math.random() * teamColors.length)],
+      whiteCap: Math.random() < 0.3,
+      flag: Math.random() > 0.45,
+      seed: Math.random() * 100,
+    });
 
     // Helper: Build Grandstand aligned with track samples
     // Tangent = Z (along track length); Normal = X (across track)
@@ -1513,6 +1411,7 @@ class Track3D {
       const tierWidth = 1.35;
       const tierHeight = 0.65;
       const depth = tiers * tierWidth;
+      const spectators = [];
 
       // Tiered steps running along Z (track length)
       // Guaranteed strictly outside the track road width
@@ -1528,14 +1427,9 @@ class Track3D {
         const spectatorsOnTier = Math.floor(lengthMeters / 1.15);
         for (let sp = 0; sp < spectatorsOnTier; sp++) {
           if (Math.random() > 0.15) { // 85% full grandstand
-            const spectator = createSpectator(true);
             const zPos = -lengthMeters / 2 + 1.2 + sp * 1.15 + (Math.random() - 0.5) * 0.2;
             const yPos = (t + 1) * tierHeight;
-            spectator.position.set(xTier, yPos, zPos);
-            spectator.baseY = yPos;
-            // Face the track (towards center X = 0)
-            spectator.rotation.y = side > 0 ? -Math.PI / 2 : Math.PI / 2;
-            grandstandGroup.add(spectator);
+            spectators.push(createSpectator(xTier, yPos, zPos, side));
           }
         }
       }
@@ -1568,6 +1462,7 @@ class Track3D {
         name: "Grandstand Structure"
       });
 
+      this.crowd.addVenue(grandstandGroup, spectators, true);
       this.trackGroup.add(grandstandGroup);
     };
 
@@ -1629,17 +1524,12 @@ class Track3D {
       fieldGroup.add(fenceRail);
 
       // Crowds of spectators gathered on the grassy mound watching the race
+      const spectators = [];
       for (let p = 0; p < zone.count; p++) {
-        const spectator = createSpectator(false);
         const zPos = (Math.random() - 0.5) * (fenceLength * 0.85);
         // Positioned safely behind the safety fence on the mound
         const xPos = fenceX - zone.side * (1.2 + Math.random() * (zone.radius * 0.8));
-        spectator.position.set(xPos, 1.2, zPos);
-        spectator.baseY = 1.2;
-
-        // Face towards the track
-        spectator.rotation.y = zone.side > 0 ? -Math.PI / 2 : Math.PI / 2;
-        fieldGroup.add(spectator);
+        spectators.push(createSpectator(xPos, 1.2, zPos, zone.side));
       }
 
       // Add a Marshall Station with orange-suited marshalls
@@ -1664,25 +1554,13 @@ class Track3D {
       marshalGroup.add(flagMesh);
 
       fieldGroup.add(marshalGroup);
+      this.crowd.addVenue(fieldGroup, spectators, false);
       this.trackGroup.add(fieldGroup);
     });
   }
 
   updateAudience(dt) {
-    if (!this.animatedSpectators || this.animatedSpectators.length === 0) return;
-    this.crowdTime = (this.crowdTime || 0) + dt;
-    const t = this.crowdTime;
-
-    for (let i = 0; i < this.animatedSpectators.length; i++) {
-      const sp = this.animatedSpectators[i];
-      if (sp.wavingArm) {
-        sp.wavingArm.rotation.z = -0.6 + Math.sin(t * 5.0 + sp.seed) * 0.5;
-        sp.wavingArm.rotation.x = Math.sin(t * 3.5 + sp.seed * 0.7) * 0.3;
-      }
-      if (sp.seed % 3 === 0) {
-        sp.position.y = sp.baseY + Math.abs(Math.sin(t * 4.0 + sp.seed)) * 0.12;
-      }
-    }
+    if (this.app?.camera) this.crowd.update(dt, this.app.camera.position);
   }
 
   buildOverlays() {
@@ -1826,10 +1704,10 @@ class RaceCar3D {
   }
 
   buildModel() {
-    const carbonMat = new THREE.MeshStandardMaterial({ color: 0x111620, roughness: 0.35, metalness: 0.85 });
-    const liveryCyanMat = new THREE.MeshStandardMaterial({ color: 0x00f2fe, roughness: 0.18, metalness: 0.85 });
+    const carbonMat = new THREE.MeshStandardMaterial({ color: 0x18222a, roughness: 0.48, metalness: 0.24 });
+    const liveryCyanMat = new THREE.MeshStandardMaterial({ color: 0x00dce7, roughness: 0.28, metalness: 0.45 });
     const haloTitaniumMat = new THREE.MeshStandardMaterial({ color: 0x242c38, roughness: 0.25, metalness: 0.95 });
-    const darkAeroMat = new THREE.MeshStandardMaterial({ color: 0x080a0f, roughness: 0.45, metalness: 0.7 });
+    const darkAeroMat = new THREE.MeshStandardMaterial({ color: 0x182333, roughness: 0.49, metalness: 0.33 });
     this.brakeRotorMat = new THREE.MeshStandardMaterial({
       color: 0x6e7884,
       metalness: 0.9,
@@ -1839,77 +1717,61 @@ class RaceCar3D {
     });
     const brakeRotorMat = this.brakeRotorMat;
     const brakeCaliperMat = new THREE.MeshStandardMaterial({ color: 0xff1744, metalness: 0.7, roughness: 0.3 });
-    const rimAlloyMat = new THREE.MeshStandardMaterial({ color: 0x141820, metalness: 0.92, roughness: 0.18 });
+    const rimAlloyMat = new THREE.MeshStandardMaterial({ color: 0x3e484e, metalness: 0.52, roughness: 0.31 });
 
     const chassisGroup = new THREE.Group();
     this.chassisMesh = chassisGroup;
     this.carGroup.add(chassisGroup);
 
-    // 1. Authentic Open-Cockpit Monocoque Architecture (Hollow Cockpit Tub)
-    // Rear engine cover & monocoque bulkhead (behind cockpit)
-    const rearTubGeom = new THREE.BoxGeometry(1.25, 0.42, 1.55);
-    const rearTub = new THREE.Mesh(rearTubGeom, liveryCyanMat);
-    rearTub.position.set(0, 0.42, -0.825);
-    rearTub.castShadow = true;
-    chassisGroup.add(rearTub);
+    const addPart = (name, geometry, material, castsShadow = true) => {
+      const part = new THREE.Mesh(geometry, material);
+      part.name = name;
+      part.castShadow = castsShadow;
+      chassisGroup.add(part);
+      return part;
+    };
+    const body = (name, stations, material = liveryCyanMat) => addPart(name, sculptBody(stations), material);
+    const wing = (name, stations, thickness, camber, material) =>
+      addPart(name, shapeAerofoil(stations, thickness, camber), material);
 
-    // Sleek low-profile front nose bulkhead (narrow and low so road is wide open)
-    const frontTubGeom = new THREE.BoxGeometry(0.46, 0.18, 1.3);
-    const frontTub = new THREE.Mesh(frontTubGeom, liveryCyanMat);
-    frontTub.position.set(0, 0.25, 1.25);
-    frontTub.castShadow = true;
-    chassisGroup.add(frontTub);
+    body("Tapered nose and front monocoque", [
+      [0.58, 0, 0.31, 0.34, 0.18], [0.87, 0, 0.33, 0.34, 0.16],
+      [1.37, 0, 0.32, 0.29, 0.135], [1.81, 0, 0.28, 0.22, 0.106],
+      [2.25, 0, 0.24, 0.155, 0.070], [2.68, 0, 0.21, 0.10, 0.042],
+      [2.94, 0, 0.196, 0.063, 0.029], [3.01, 0, 0.193, 0.018, 0.012],
+    ]);
+    body("Carbon floor and rear diffuser", [
+      [-2.22, 0, 0.24, 0.58, 0.039], [-1.68, 0, 0.165, 0.64, 0.038],
+      [-0.95, 0, 0.139, 0.90, 0.035], [0.12, 0, 0.137, 0.99, 0.031],
+      [0.68, 0, 0.14, 0.89, 0.042], [0.93, 0, 0.16, 0.46, 0.043],
+      [1.13, 0, 0.17, 0.32, 0.029],
+    ], darkAeroMat);
+    body("Cockpit floor", [[-0.23, 0, 0.253, 0.32, 0.044], [0.59, 0, 0.245, 0.32, 0.043]], carbonMat);
+    for (const side of [-1, 1]) {
+      body("Rounded cockpit surround", [
+        [-0.4, side * 0.321, 0.470, 0.1, 0.12], [-0.05, side * 0.344, 0.473, 0.083, 0.095],
+        [0.31, side * 0.343, 0.432, 0.078, 0.074], [0.58, side * 0.316, 0.413, 0.075, 0.068],
+        [0.79, side * 0.25, 0.400, 0.068, 0.061],
+      ]);
+    }
 
-    // Left and right cockpit side bolsters (low-profile sleek rims)
-    [-0.36, 0.36].forEach((sideX) => {
-      const rimGeom = new THREE.BoxGeometry(0.12, 0.22, 0.65);
-      const rimMesh = new THREE.Mesh(rimGeom, liveryCyanMat);
-      rimMesh.position.set(sideX, 0.32, 0.26);
-      chassisGroup.add(rimMesh);
-    });
-
-    // Cockpit interior floor tray (under driver seat)
-    const floorGeom = new THREE.BoxGeometry(0.68, 0.06, 0.65);
-    const floorMesh = new THREE.Mesh(floorGeom, darkAeroMat);
-    floorMesh.position.set(0, 0.22, 0.26);
-    chassisGroup.add(floorMesh);
-
-    // Smooth Slanted Needle Nosecone
-    const noseGeom = new THREE.ConeGeometry(0.38, 1.8, 20);
-    const nose = new THREE.Mesh(noseGeom, liveryCyanMat);
-    nose.rotation.x = Math.PI / 2 + 0.08;
-    nose.position.set(0, 0.32, 2.45);
-    nose.castShadow = true;
-    chassisGroup.add(nose);
-
-    // Nose Pylons
-    [-0.16, 0.16].forEach((px) => {
-      const pylonGeom = new THREE.BoxGeometry(0.06, 0.22, 0.35);
-      const pylon = new THREE.Mesh(pylonGeom, darkAeroMat);
-      pylon.position.set(px, 0.18, 2.85);
-      chassisGroup.add(pylon);
-    });
-
-    // 2. High-Downforce Front Wing with Aerofoil Cascade
-    const frontWingMainGeom = new THREE.BoxGeometry(2.35, 0.05, 0.65);
-    const frontWingMain = new THREE.Mesh(frontWingMainGeom, darkAeroMat);
-    frontWingMain.position.set(0, 0.15, 3.0);
-    frontWingMain.castShadow = true;
-    chassisGroup.add(frontWingMain);
-
-    const frontUpperFlapGeom = new THREE.BoxGeometry(2.15, 0.04, 0.35);
-    const frontUpperFlap = new THREE.Mesh(frontUpperFlapGeom, liveryCyanMat);
-    frontUpperFlap.position.set(0, 0.22, 2.92);
-    frontUpperFlap.rotation.x = 0.12;
-    chassisGroup.add(frontUpperFlap);
-
-    // Curved Front Endplates with Vortex Fins
-    [-1.18, 1.18].forEach((ex) => {
-      const frontEndplateGeom = new THREE.BoxGeometry(0.04, 0.42, 0.85);
-      const frontEndplate = new THREE.Mesh(frontEndplateGeom, liveryCyanMat);
-      frontEndplate.position.set(ex, 0.25, 3.0);
-      chassisGroup.add(frontEndplate);
-    });
+    wing("Swept carbon front wing", [
+      [-1.18, 3.02, 0.35, 0.185], [-1.06, 3.13, 0.52, 0.135], [-0.69, 3.22, 0.58, 0.124],
+      [-0.3, 3.27, 0.55, 0.143], [0, 3.26, 0.51, 0.154], [0.3, 3.27, 0.55, 0.143],
+      [0.69, 3.22, 0.58, 0.124], [1.06, 3.13, 0.52, 0.135], [1.18, 3.02, 0.35, 0.185],
+    ], 0.036, 0.035, darkAeroMat);
+    for (const side of [-1, 1]) {
+      const flap = [
+        [0.25, 3.01, 0.23, 0.168], [0.5, 2.99, 0.335, 0.218], [0.85, 2.98, 0.35, 0.238],
+        [1.03, 2.94, 0.32, 0.260], [1.15, 2.90, 0.25, 0.264],
+      ].map(([x, ...station]) => [x * side, ...station]).sort((a, b) => a[0] - b[0]);
+      wing("Front wing flap", flap, 0.022, 0.041, liveryCyanMat);
+      const plate = addPart("Front wing endplate", shapePanel([
+        [-0.32, 0.10], [-0.32, 0.19], [-0.11, 0.33], [0.22, 0.36], [0.33, 0.25], [0.35, 0.115],
+      ], 0.027, 0.014), liveryCyanMat);
+      plate.rotation.y = Math.PI / 2;
+      plate.position.set(side * 1.17, 0, 2.96);
+    }
 
     // 3. Titanium HALO Safety Structure
     const haloGroup = new THREE.Group();
@@ -2007,60 +1869,51 @@ class RaceCar3D {
     this.steeringWheelMesh = steerWheelGroup;
     chassisGroup.add(steerWheelGroup);
 
-    // 5. Sculpted Sidepods with Downwash Channels
-    [-1, 1].forEach((side) => {
-      const sidepodGeom = new THREE.BoxGeometry(0.48, 0.38, 1.9);
-      const sidepod = new THREE.Mesh(sidepodGeom, liveryCyanMat);
-      sidepod.position.set(side * 0.76, 0.38, -0.2);
-      sidepod.castShadow = true;
-      chassisGroup.add(sidepod);
+    for (const side of [-1, 1]) {
+      body("Sculpted sidepod", [
+        [-1.77, side * 0.30, 0.255, 0.13, 0.09], [-1.35, side * 0.41, 0.28, 0.19, 0.105],
+        [-0.89, side * 0.54, 0.349, 0.27, 0.145], [-0.31, side * 0.64, 0.393, 0.31, 0.21],
+        [0.27, side * 0.65, 0.429, 0.31, 0.239], [0.61, side * 0.65, 0.434, 0.27, 0.176],
+        [0.78, side * 0.63, 0.443, 0.185, 0.11], [0.83, side * 0.62, 0.454, 0.13, 0.075],
+      ]);
+      body("Sidepod intake", [
+        [0.793, side * 0.629, 0.454, 0.15, 0.083], [0.839, side * 0.624, 0.454, 0.12, 0.061],
+      ], carbonMat);
+    }
 
-      const ductGeom = new THREE.BoxGeometry(0.42, 0.32, 0.12);
-      const duct = new THREE.Mesh(ductGeom, darkAeroMat);
-      duct.position.set(side * 0.76, 0.38, 0.76);
-      chassisGroup.add(duct);
+    body("Tapered engine cover", [
+      [-2.14, 0, 0.28, 0.14, 0.115], [-1.70, 0, 0.34, 0.237, 0.17],
+      [-1.23, 0, 0.44, 0.31, 0.255], [-0.77, 0, 0.53, 0.38, 0.34],
+      [-0.38, 0, 0.55, 0.39, 0.365], [-0.15, 0, 0.472, 0.32, 0.236],
+      [-0.06, 0, 0.43, 0.19, 0.16],
+    ]);
+    body("Roll hoop air intake", [
+      [-0.75, 0, 0.79, 0.06, 0.085], [-0.50, 0, 0.892, 0.135, 0.115],
+      [-0.29, 0, 0.94, 0.149, 0.121], [-0.15, 0, 0.953, 0.117, 0.09],
+    ]);
+    body("Air intake throat", [[-0.16, 0, 0.962, 0.099, 0.067], [-0.133, 0, 0.962, 0.082, 0.054]], carbonMat);
+    const fin = addPart("Sculpted engine cover fin", shapePanel([
+      [0.16, 0.85], [0.34, 1.02], [0.69, 0.94], [1.62, 0.705], [1.75, 0.565], [0.58, 0.64],
+    ], 0.024, 0.01), liveryCyanMat);
+    fin.rotation.y = Math.PI / 2;
 
-      const floorGeom = new THREE.BoxGeometry(0.55, 0.04, 2.6);
-      const floor = new THREE.Mesh(floorGeom, darkAeroMat);
-      floor.position.set(side * 0.88, 0.16, -0.2);
-      chassisGroup.add(floor);
-    });
-
-    // 6. Overhead Engine Airbox & Aerodynamic Shark Fin
-    const airboxGeom = new THREE.BoxGeometry(0.32, 0.32, 0.6);
-    const airbox = new THREE.Mesh(airboxGeom, liveryCyanMat);
-    airbox.position.set(0, 0.88, -0.22);
-    chassisGroup.add(airbox);
-
-    const sharkFinGeom = new THREE.BoxGeometry(0.04, 0.55, 1.4);
-    const sharkFin = new THREE.Mesh(sharkFinGeom, liveryCyanMat);
-    sharkFin.position.set(0, 0.86, -1.1);
-    chassisGroup.add(sharkFin);
-
-    // 7. Dual-Plane Contoured Rear Wing & DRS Pod
-    const rearWingMainGeom = new THREE.BoxGeometry(1.95, 0.06, 0.65);
-    const rearWingMain = new THREE.Mesh(rearWingMainGeom, liveryCyanMat);
-    rearWingMain.position.set(0, 1.08, -2.15);
-    rearWingMain.castShadow = true;
-    chassisGroup.add(rearWingMain);
-
-    const rearWingUpperGeom = new THREE.BoxGeometry(1.9, 0.04, 0.35);
-    const rearWingUpper = new THREE.Mesh(rearWingUpperGeom, darkAeroMat);
-    rearWingUpper.position.set(0, 1.2, -2.25);
-    rearWingUpper.rotation.x = -0.16;
-    chassisGroup.add(rearWingUpper);
-
-    const drsPodGeom = new THREE.BoxGeometry(0.12, 0.14, 0.2);
-    const drsPod = new THREE.Mesh(drsPodGeom, carbonMat);
-    drsPod.position.set(0, 1.15, -2.15);
-    chassisGroup.add(drsPod);
-
-    [-0.98, 0.98].forEach((rx) => {
-      const rearEndplateGeom = new THREE.BoxGeometry(0.04, 0.72, 0.95);
-      const rearEndplate = new THREE.Mesh(rearEndplateGeom, darkAeroMat);
-      rearEndplate.position.set(rx, 1.0, -2.15);
-      chassisGroup.add(rearEndplate);
-    });
+    wing("Rear wing mainplane", [
+      [-0.95, -1.89, 0.60, 0.98], [-0.78, -1.84, 0.68, 1.02], [-0.33, -1.76, 0.68, 1.035],
+      [0, -1.75, 0.67, 1.035], [0.33, -1.76, 0.68, 1.035], [0.78, -1.84, 0.68, 1.02], [0.95, -1.89, 0.60, 0.98],
+    ], 0.034, 0.095, liveryCyanMat);
+    wing("Rear wing upper flap", [
+      [-0.925, -2.09, 0.46, 1.17], [-0.61, -2.05, 0.51, 1.21], [0, -2.01, 0.53, 1.225],
+      [0.61, -2.05, 0.51, 1.21], [0.925, -2.09, 0.46, 1.17],
+    ], 0.023, 0.078, darkAeroMat);
+    for (const side of [-1, 1]) {
+      const plate = addPart("Rear wing endplate", shapePanel([
+        [-0.32, 0.79], [-0.29, 1.06], [-0.16, 1.21], [0.29, 1.28], [0.39, 1.19],
+        [0.38, 0.86], [0.22, 0.74], [-0.08, 0.75],
+      ], 0.04, 0.025), darkAeroMat);
+      plate.rotation.y = Math.PI / 2;
+      plate.position.set(side * 0.94, 0, -2.17);
+      body("Rear wing support", [[-2.22, side * 0.23, 0.64, 0.038, 0.34], [-1.97, side * 0.23, 0.65, 0.036, 0.33]], darkAeroMat);
+    }
 
     // 8. Functioning FIA Rain / Brake LED Light
     const lightGeom = new THREE.BoxGeometry(0.38, 0.18, 0.06);
@@ -2095,11 +1948,11 @@ class RaceCar3D {
 
     // 10. Open-Wheel Assemblies with Visible Spinning
     const tireRadius = 0.38;
-    const tireWidth = 0.34;
     const rimRadius = tireRadius * 0.62;
     const tireSidewallTex = createWheelSidewallTexture("#ffd200");
 
     const createWheel = (x, y, z, isFront) => {
+      const tireWidth = isFront ? 0.34 : 0.46;
       const hubGroup = new THREE.Group();
       hubGroup.position.set(x, y, z);
 
@@ -2118,15 +1971,14 @@ class RaceCar3D {
       const rollGroup = new THREE.Group();
       hubGroup.add(rollGroup);
 
-      const tireGeom = new THREE.CylinderGeometry(tireRadius, tireRadius, tireWidth, 24);
-      tireGeom.rotateZ(Math.PI / 2);
-      const tireTreadMat = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 0.92, metalness: 0.08 });
+      const tireGeom = shapeSlick(tireRadius, tireWidth, rimRadius * 0.97);
+      const tireTreadMat = new THREE.MeshStandardMaterial({ color: 0x20252b, roughness: 0.87, metalness: 0.04 });
       const tire = new THREE.Mesh(tireGeom, tireTreadMat);
       tire.castShadow = true;
       rollGroup.add(tire);
 
       // Pirelli Sidewall Face Disc
-      const sidewallGeom = new THREE.CircleGeometry(tireRadius, 24);
+      const sidewallGeom = new THREE.CircleGeometry(tireRadius * 0.89, 32);
       const sidewallMat = new THREE.MeshBasicMaterial({
         map: tireSidewallTex,
         transparent: true,
@@ -2185,8 +2037,8 @@ class RaceCar3D {
 
     createWheel(-1.18, 0.38, 1.45, true);  // Front Left
     createWheel(1.18, 0.38, 1.45, true);   // Front Right
-    createWheel(-1.22, 0.38, -1.45, false); // Rear Left (level with front wheels)
-    createWheel(1.22, 0.38, -1.45, false);  // Rear Right (level with front wheels)
+    createWheel(-1.22, 0.38, -1.45, false); // Rear Left
+    createWheel(1.22, 0.38, -1.45, false);  // Rear Right
   }
 
   updateDashboard(speedMph, speedKmh, rpm, gear, throttle, brake, delta, lap, maxLaps, latG) {
@@ -2527,10 +2379,12 @@ class RaceCar3D {
     }
 
     if (this.chassisMesh) {
-      // Keep chassis level and balanced with the ground (subtle responsive suspension)
-      const pitch = isBraking ? 0.005 : 0;
-      const roll = steerAngle * 0.005;
-      const smoothFactor = 1.0 - Math.exp(-14.0 * dt);
+      // High-downforce F1 suspension dynamics:
+      // Nose dives under threshold braking, slight squat under full throttle
+      const pitch = isBraking ? 0.014 : -Math.min(0.007, speed * 0.00008);
+      // Realistic chassis roll outward against lateral acceleration (subtle 0.8° max, stable)
+      const roll = steerAngle * 0.016;
+      const smoothFactor = 1.0 - Math.exp(-12.0 * dt);
       this.chassisMesh.rotation.x = THREE.MathUtils.lerp(this.chassisMesh.rotation.x, pitch, smoothFactor);
       this.chassisMesh.rotation.z = THREE.MathUtils.lerp(this.chassisMesh.rotation.z, roll, smoothFactor);
     }
@@ -2559,10 +2413,11 @@ class RaceCar3D {
    ========================================================================== */
 
 class CameraManager3D {
-  constructor(camera, domElement, scene = null) {
+  constructor(camera, domElement, scene) {
     this.camera = camera;
     this.domElement = domElement;
     this.scene = scene;
+    this.drivingFar = camera.far;
     this.mode = "chase";
 
     this.currentPos = new THREE.Vector3(0, 10, -20);
@@ -2574,11 +2429,18 @@ class CameraManager3D {
     this.lookPos = new THREE.Vector3();
 
     this.orbitDistance = 145;
-    this.orbitTheta = 0;
-    this.orbitPhi = Math.PI / 4;
+    this.orbitTarget = new THREE.Vector3();
+    this.orbitFocus = new THREE.Vector3();
+    this.orbitDirection = new THREE.Vector3();
+    this.orbitRadius = 100;
+    this.orbitFitDistance = 145;
+    this.resetTrackAngles();
+    this.resetAerialView();
     this.isDragging = false;
     this.prevMouse = { x: 0, y: 0 };
     this.locked = false;
+    this.editingTrack = false;
+    this.pinchSpan = 0;
 
     this.cameraYaw = 0; // Filtered camera yaw for rock-solid stability in turns
     this.cameraInitialized = false;
@@ -2590,17 +2452,146 @@ class CameraManager3D {
     this.bindEvents();
   }
 
+  setTrack(track) {
+    this.orbitSamples = track.samples;
+    this.orbitMargin = track.roadWidth / 2 + 16;
+    this.fitTrack(1, true);
+  }
+
+  circuitBounds(theta) {
+    const sin = Math.sin(theta), cos = Math.cos(theta);
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const { position } of this.orbitSamples) {
+      const x = position.x * cos - position.z * sin;
+      const z = position.x * sin + position.z * cos;
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minZ = Math.min(minZ, z);
+      maxZ = Math.max(maxZ, z);
+    }
+    return { minX, maxX, minZ, maxZ };
+  }
+
+  fitTrack(zoom = 1, orient = false) {
+    // Reserve the drawer/header space so the fitted track remains visible.
+    const panelWidth = id => {
+      const el = $(id);
+      return el && !el.classList.contains("collapsed") ? (el.getBoundingClientRect?.().width || 320) + 40 : 24;
+    };
+    const widthFraction = Math.max(0.2, 1 - 2 * Math.max(panelWidth("leftPanel"), panelWidth("rightPanel")) / window.innerWidth);
+    const heightFraction = Math.max(0.3, 1 - 176 / window.innerHeight);
+    const tanHalfFov = Math.tan(THREE.MathUtils.degToRad(50 / 2));
+    const horizontal = tanHalfFov * this.camera.aspect * widthFraction;
+    const vertical = tanHalfFov * heightFraction;
+    let bounds = this.circuitBounds(this.orbitTheta);
+    if (orient && this.mode === "orbit" && this.orbitPhi > 1.56) {
+      const framingSize = ({ minX, maxX, minZ, maxZ }) => Math.max(
+        (maxX - minX + 2 * this.orbitMargin) / horizontal,
+        (maxZ - minZ + 2 * this.orbitMargin) / vertical,
+      );
+      this.orbitTheta = 0;
+      bounds = this.circuitBounds(0);
+      let bestSize = framingSize(bounds);
+      for (let step = -29; step <= 30; step++) {
+        const theta = step * Math.PI / 60;
+        const candidate = this.circuitBounds(theta);
+        const size = framingSize(candidate);
+        if (size < bestSize) {
+          this.orbitTheta = theta;
+          bounds = candidate;
+          bestSize = size;
+        }
+      }
+    }
+    const sinTheta = Math.sin(this.orbitTheta), cosTheta = Math.cos(this.orbitTheta);
+    const sinPhi = Math.sin(this.orbitPhi), cosPhi = Math.cos(this.orbitPhi);
+    this.orbitDirection.set(sinTheta * cosPhi, sinPhi, cosTheta * cosPhi);
+    const { minX, maxX, minZ, maxZ } = bounds;
+    const centerX = (minX + maxX) * 0.5;
+    const centerZ = (minZ + maxZ) * 0.5;
+    const halfWidth = (maxX - minX) * 0.5 + this.orbitMargin;
+    const halfDepth = (maxZ - minZ) * 0.5 + this.orbitMargin;
+    this.orbitTarget.set(centerX * cosTheta + centerZ * sinTheta, 0, -centerX * sinTheta + centerZ * cosTheta);
+    this.orbitRadius = Math.hypot(halfWidth, halfDepth);
+
+    // Test the corners of the footprint in the camera's rotated basis.
+    let distance = 0;
+    for (const y of [0, 10]) {
+      for (const z of [-halfDepth, halfDepth]) {
+        const depth = y * sinPhi + z * cosPhi;
+        const up = y * cosPhi - z * sinPhi;
+        distance = Math.max(distance, depth + Math.max(halfWidth / horizontal, Math.abs(up) / vertical));
+      }
+    }
+    this.orbitFitDistance = distance * 1.025;
+    this.orbitDistance = THREE.MathUtils.clamp(this.orbitFitDistance * zoom, this.orbitMinDistance, this.orbitFitDistance * 4);
+    this.fittedTheta = this.orbitTheta;
+    this.fittedPhi = this.orbitPhi;
+    this.updateZoomButtons();
+  }
+
   setMode(mode) {
     this.mode = mode;
     this.cameraInitialized = false;
-    if (this.scene && this.scene.fog) {
-      this.scene.fog.density = 0.00018;
+    this.pinchSpan = 0;
+    this.domElement.classList.toggle("circuit-camera", mode === "orbit");
+    $("circuitZoomControls").hidden = mode !== "orbit";
+    if (this.isTrackOrbit) {
+      this.resetOrbitView();
+    } else if (this.camera.far !== this.drivingFar) {
+      this.camera.far = this.drivingFar;
+      this.camera.updateProjectionMatrix();
     }
+    this.scene.fog.density = 0.00018;
+  }
+
+  resetOrbitView() {
+    this.resetTrackAngles();
+    this.fitTrack(1, true);
+  }
+
+  resetTrackAngles() {
+    this.orbitTheta = 0;
+    this.orbitPhi = Math.PI / 2 - 0.00001;
+  }
+
+  get isTrackOrbit() {
+    return this.mode === "orbit" || this.mode === "map";
+  }
+
+  get isAerialView() {
+    return this.mode === "aerial" || this.isTrackOrbit;
+  }
+
+  get orbitMinDistance() {
+    return this.mode === "orbit" && !this.editingTrack ? 55 : this.orbitFitDistance * 0.08;
+  }
+
+  updateZoomButtons() {
+    if (this.mode !== "orbit") return;
+    $("btnCircuitZoomIn").disabled = this.orbitDistance <= this.orbitMinDistance;
+    $("btnCircuitZoomOut").disabled = this.orbitDistance >= this.orbitFitDistance * 4;
+  }
+
+  zoomBy(scale) {
+    if (this.locked) return;
+    if (this.mode === "aerial") {
+      this.aerialDistance = THREE.MathUtils.clamp(this.aerialDistance * scale, 22, 135);
+    } else if (this.isTrackOrbit) {
+      this.orbitDistance = THREE.MathUtils.clamp(this.orbitDistance * scale, this.orbitMinDistance, this.orbitFitDistance * 4);
+      this.updateZoomButtons();
+    }
+  }
+
+  resetAerialView() {
+    this.aerialDistance = 46;
+    this.aerialAzimuth = -2.05;
+    this.aerialElevation = THREE.MathUtils.degToRad(59);
   }
 
   bindEvents() {
     this.domElement.addEventListener("mousedown", (e) => {
-      if (this.mode === "orbit" && !this.locked) {
+      if (this.isAerialView && !this.locked && e.button === 0) {
         this.isDragging = true;
         this.prevMouse.x = e.clientX;
         this.prevMouse.y = e.clientY;
@@ -2612,33 +2603,73 @@ class CameraManager3D {
     });
 
     window.addEventListener("mousemove", (e) => {
-      if (this.mode === "orbit" && !this.locked && this.isDragging) {
+      if (this.isAerialView && !this.locked && this.isDragging) {
         const dx = e.clientX - this.prevMouse.x;
         const dy = e.clientY - this.prevMouse.y;
         this.prevMouse.x = e.clientX;
         this.prevMouse.y = e.clientY;
 
-        this.orbitTheta -= dx * 0.006;
-        this.orbitPhi = Math.max(0.01, Math.min(Math.PI / 2.01, this.orbitPhi - dy * 0.006));
+        if (this.mode === "aerial") {
+          this.aerialAzimuth -= dx * 0.006;
+          this.aerialElevation = THREE.MathUtils.clamp(this.aerialElevation - dy * 0.006, 0.48, 1.55);
+        } else {
+          this.orbitTheta -= dx * 0.006;
+          this.orbitPhi = THREE.MathUtils.clamp(this.orbitPhi - dy * 0.006, 0.1, Math.PI / 2 - 0.00001);
+        }
       }
     });
 
+    this.domElement.addEventListener("dblclick", () => {
+      if (this.locked) return;
+      if (this.mode === "aerial") {
+        this.resetAerialView();
+        this.cameraInitialized = false;
+      } else if (this.isTrackOrbit) {
+        this.resetOrbitView();
+      }
+    });
     this.domElement.addEventListener("wheel", (e) => {
-      if (this.mode === "orbit" && !this.locked) {
-        // Unlimited smooth exponential/proportional zoom:
-        // Allows continuous zoom from extreme macro close-up (0.2m) to outer-space orbit (150,000m+)
-        const zoomSpeed = 0.0018;
-        const factor = Math.exp(e.deltaY * zoomSpeed);
-        this.orbitDistance = Math.max(0.2, Math.min(150000, this.orbitDistance * factor));
+      if (this.isAerialView && !this.locked) {
+        e.preventDefault();
+        const units = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1;
+        this.zoomBy(Math.exp(e.deltaY * units * 0.001));
       } else if (this.mode === "chase") {
         this.chaseDistance = Math.max(15, Math.min(60, (this.chaseDistance || 28.0) + e.deltaY * 0.03));
         this.chaseHeight = this.chaseDistance * 0.29;
       }
-    }, { passive: true });
+    }, { passive: false });
+
+    const updatePinch = (e) => {
+      if (this.mode !== "orbit" || this.locked || e.targetTouches.length !== 2) {
+        this.pinchSpan = 0;
+        return;
+      }
+      const a = e.targetTouches[0], b = e.targetTouches[1];
+      const span = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      if (e.type === "touchmove" && this.pinchSpan > 0 && span > 0) {
+        e.preventDefault();
+        this.zoomBy(this.pinchSpan / span);
+      }
+      this.pinchSpan = span;
+    };
+    this.domElement.addEventListener("touchstart", updatePinch);
+    this.domElement.addEventListener("touchmove", updatePinch, { passive: false });
+    this.domElement.addEventListener("touchend", updatePinch);
+    this.domElement.addEventListener("touchcancel", () => { this.pinchSpan = 0; });
+
+    $("btnCircuitZoomIn").addEventListener("click", () => this.zoomBy(0.72));
+    $("btnCircuitZoomOut").addEventListener("click", () => this.zoomBy(1 / 0.72));
+    $("btnCircuitFit").addEventListener("click", () => {
+      if (!this.locked && this.mode === "orbit") this.resetOrbitView();
+    });
   }
 
-  update(carGroup, forwardDir, speed, dt) {
+  update(carGroup, forwardDir, speed, dt, editingTrack = false) {
     const carPos = carGroup.position;
+    if (this.editingTrack !== editingTrack) {
+      this.editingTrack = editingTrack;
+      this.updateZoomButtons();
+    }
 
     if (this.mode === "chase") {
       const chaseOffsetDist = this.chaseDistance || 34.0;
@@ -2706,21 +2737,62 @@ class CameraManager3D {
         this.camera.updateProjectionMatrix();
       }
 
-    } else if (this.mode === "orbit") {
-      const x = Math.sin(this.orbitTheta) * Math.cos(this.orbitPhi) * this.orbitDistance;
-      const z = Math.cos(this.orbitTheta) * Math.cos(this.orbitPhi) * this.orbitDistance;
-      const y = Math.sin(this.orbitPhi) * this.orbitDistance;
+    } else if (this.mode === "aerial") {
+      // Let the helicopter coast through changes in direction while its gimbal
+      // stays aimed at the car and the piece of road immediately ahead.
+      const heading = Math.atan2(forwardDir.x, forwardDir.z);
+      if (!this.cameraInitialized) this.cameraYaw = heading;
+      const turn = heading - this.cameraYaw;
+      this.cameraYaw += Math.atan2(Math.sin(turn), Math.cos(turn)) * (1 - Math.exp(-2.6 * dt));
 
-      this.camera.position.set(x, y, z);
-      this.camera.lookAt(0, 0, 0);
+      const azimuth = this.cameraYaw + this.aerialAzimuth;
+      const distance = this.aerialDistance * (1 + Math.min(Math.abs(speed) / 350, 0.2));
+      const groundDistance = Math.cos(this.aerialElevation) * distance;
+      const travelLead = speed * 0.13;
+      this.desiredPos.set(
+        carPos.x + Math.sin(azimuth) * groundDistance + forwardDir.x * travelLead,
+        carPos.y + Math.sin(this.aerialElevation) * distance,
+        carPos.z + Math.cos(azimuth) * groundDistance + forwardDir.z * travelLead,
+      );
+      if (this.cameraInitialized) {
+        this.currentPos.lerp(this.desiredPos, 1 - Math.exp(-7.5 * dt));
+      } else {
+        this.currentPos.copy(this.desiredPos);
+        this.cameraInitialized = true;
+      }
+      const framingLead = Math.min(distance * 0.14, 4 + Math.abs(speed) * 0.04) * Math.sign(speed || 1);
+      this.desiredLookAt.copy(carPos).addScaledVector(forwardDir, framingLead);
+      this.desiredLookAt.y += 0.4;
+      this.camera.position.copy(this.currentPos);
+      this.camera.lookAt(this.desiredLookAt);
+      if (this.camera.fov !== 36) {
+        this.camera.fov = 36;
+        this.camera.updateProjectionMatrix();
+      }
+
+    } else if (this.isTrackOrbit) {
+      if (this.fittedTheta !== this.orbitTheta || this.fittedPhi !== this.orbitPhi) {
+        this.fitTrack(this.orbitDistance / this.orbitFitDistance);
+      }
+      const zoom = this.orbitDistance / this.orbitFitDistance;
+      const follow = this.mode === "orbit" && !editingTrack
+        ? THREE.MathUtils.smoothstep(1 - zoom, 0.10, 0.66)
+        : 0;
+      this.desiredLookAt.copy(this.orbitTarget).lerp(carPos, follow);
+      this.desiredLookAt.addScaledVector(forwardDir, follow * speed * 0.12);
+      if (follow > 0 && this.cameraInitialized) {
+        this.orbitFocus.lerp(this.desiredLookAt, 1 - Math.exp(-8 * dt));
+      } else {
+        this.orbitFocus.copy(this.desiredLookAt);
+      }
+      this.cameraInitialized = true;
+      this.camera.position.copy(this.orbitFocus).addScaledVector(this.orbitDirection, this.orbitDistance);
+      this.camera.lookAt(this.orbitFocus);
+      this.camera.far = Math.max(35000, this.orbitDistance + this.orbitRadius * 3);
       this.camera.fov = 50;
       this.camera.updateProjectionMatrix();
-
-      // Adaptively scale atmospheric fog density with orbit altitude so high-altitude orbital view never whites out
-      if (this.scene && this.scene.fog) {
-        const baseDensity = 0.00018;
-        this.scene.fog.density = baseDensity * Math.min(1.0, 150.0 / Math.max(150.0, this.orbitDistance));
-      }
+      const overhead = this.mode === "orbit" && this.orbitPhi > 1.3;
+      this.scene.fog.density = overhead ? 0 : Math.min(0.00018, 0.25 / this.orbitDistance);
     }
   }
 }
@@ -3174,6 +3246,7 @@ class TireSmokeAndSkidSystem {
     });
     this.instancedMesh = new THREE.InstancedMesh(geom, this.smokeMat, this.maxParticles);
     this.instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.instancedMesh.frustumCulled = false;
     this.scene.add(this.instancedMesh);
 
     const dummy = new THREE.Object3D();
@@ -3205,6 +3278,7 @@ class TireSmokeAndSkidSystem {
       opacity: 0.78,
     });
     this.skidLine = new THREE.LineSegments(this.skidGeom, skidMat);
+    this.skidLine.frustumCulled = false;
     this.scene.add(this.skidLine);
     this.skidWriteIndex = 0;
   }
@@ -3240,7 +3314,7 @@ class TireSmokeAndSkidSystem {
   }
 
   update(dt, camera) {
-    const dummy = new THREE.Object3D();
+    const dummy = this.dummy || (this.dummy = new THREE.Object3D());
     let needsUpdate = false;
 
     for (let i = 0; i < this.maxParticles; i++) {
@@ -3281,183 +3355,6 @@ class TireSmokeAndSkidSystem {
     this.instancedMesh.instanceMatrix.needsUpdate = true;
     this.skidPositions.fill(0);
     this.skidGeom.attributes.position.needsUpdate = true;
-  }
-}
-
-/* ==========================================================================
-   Beta: Multi-Car Sparring AI Opponent (Dynamic Racing Agent)
-   ========================================================================== */
-
-class OpponentCarAgent {
-  constructor(scene) {
-    this.scene = scene;
-    this.car = new RaceCar3D(scene);
-    this.recolorLivery();
-
-    this.progress = 0.004;
-    this.speed = 0.0;
-    this.targetSpeed = 48.0;
-    this.lateralOffset = 1.6;
-    this.enabled = true;
-    this.tempVec = new THREE.Vector3();
-    this.app = null;
-  }
-
-  reset(track) {
-    if (!track) return;
-    const trackLength = track.totalLength || 5000;
-    // Starting Grid Slot P2: ~20m ahead on the starting grid, right lane (+1.6m on tarmac)
-    this.progress = Math.min(0.06, 20.0 / trackLength);
-    this.speed = 0.0;
-    this.targetSpeed = 48.0;
-    this.lateralOffset = 1.6;
-
-    const wrapped = ((this.progress % 1.0) + 1.0) % 1.0;
-    const s = track.getSampleAt ? track.getSampleAt(wrapped) : null;
-    let posX = 0, posZ = 0, heading = 0;
-    if (s) {
-      posX = s.position.x + s.normal.x * this.lateralOffset;
-      posZ = s.position.z + s.normal.z * this.lateralOffset;
-      heading = Math.atan2(s.tangent.x, s.tangent.z);
-    } else if (track.curve) {
-      track.curve.getPointAt(wrapped, this.tempVec);
-      heading = track.getTrajectoryHeading ? track.getTrajectoryHeading(wrapped) : 0;
-      posX = this.tempVec.x + Math.cos(heading) * this.lateralOffset;
-      posZ = this.tempVec.z - Math.sin(heading) * this.lateralOffset;
-    }
-
-    this.car.carGroup.position.set(posX, 0.05, posZ);
-    this.car.carGroup.rotation.set(0, heading, 0);
-    this.car.carGroup.visible = true;
-    this.car.updateVisuals(0, 0, false, 0.016);
-  }
-
-  recolorLivery() {
-    const scarletMat = new THREE.MeshStandardMaterial({ color: 0xcc0000, roughness: 0.22, metalness: 0.85 });
-    this.car.carGroup.traverse((child) => {
-      if (child.isMesh && child.material) {
-        if (child.material.color && (child.material.color.getHex() === 0x00f2fe || child.material.color.getHex() === 0x00c4cc)) {
-          child.material = scarletMat;
-        }
-      }
-    });
-  }
-
-  update(dt, track, playerProgress, playerSpeed) {
-    if (!this.enabled || !track || !track.curve) {
-      this.car.carGroup.visible = false;
-      return;
-    }
-    this.car.carGroup.visible = true;
-
-    const trackLength = track.totalLength || 5000;
-    const lookaheadFraction = Math.min(0.14, (this.speed * 1.3) / trackLength);
-    const previewProgress = (this.progress + lookaheadFraction) % 1.0;
-    const upcomingCurvature = track.getPathCurvature(previewProgress);
-
-    const rawApex = Math.sqrt(42.0 / Math.max(0.0008, upcomingCurvature));
-    this.targetSpeed = Math.max(22.0, Math.min(94.0, rawApex));
-
-    let accelRate = 22.0;
-    if (this.speed < this.targetSpeed) {
-      this.speed = Math.min(this.targetSpeed, this.speed + accelRate * dt);
-    } else {
-      this.speed = Math.max(this.targetSpeed, this.speed - 36.0 * dt);
-    }
-
-    const isBraking = (this.targetSpeed < this.speed - 4.0);
-    const dProgress = (this.speed * dt) / trackLength;
-    this.progress = (this.progress + dProgress) % 1.0;
-
-    const wrapped = ((this.progress % 1.0) + 1.0) % 1.0;
-    // Follow the actual road spline centerline (track.samples/curve) to guarantee 100% on-tarmac driving
-    const safeLaneOffset = THREE.MathUtils.clamp(this.lateralOffset, -2.5, 2.5);
-    const s = track.getSampleAt ? track.getSampleAt(wrapped) : null;
-    let posX = 0, posZ = 0, heading = 0;
-    if (s) {
-      posX = s.position.x + s.normal.x * safeLaneOffset;
-      posZ = s.position.z + s.normal.z * safeLaneOffset;
-      heading = Math.atan2(s.tangent.x, s.tangent.z);
-    } else if (track.curve) {
-      track.curve.getPointAt(wrapped, this.tempVec);
-      heading = track.getTrajectoryHeading ? track.getTrajectoryHeading(wrapped) : 0;
-      posX = this.tempVec.x + Math.cos(heading) * safeLaneOffset;
-      posZ = this.tempVec.z - Math.sin(heading) * safeLaneOffset;
-    }
-
-    this.car.carGroup.position.set(posX, 0.05, posZ);
-    this.car.carGroup.rotation.x = 0;
-    this.car.carGroup.rotation.z = 0;
-
-    let dRot = heading - this.car.carGroup.rotation.y;
-    while (dRot > Math.PI) dRot -= Math.PI * 2;
-    while (dRot < -Math.PI) dRot += Math.PI * 2;
-    this.car.carGroup.rotation.y += dRot * Math.min(1.0, 10.0 * dt);
-
-    // Opponent physical world collision resolution (cannot pass through trackside objects)
-    if (this.app && this.app.resolveWorldCollisions) {
-      const oppCol = this.app.resolveWorldCollisions(this.car.carGroup.position, this.speed, this.car.carGroup.rotation.y, false, dt, this.progress);
-      if (oppCol.collided) {
-        this.speed = oppCol.newSpeed;
-      }
-    }
-
-    this.car.updateVisuals(this.speed, -(dRot / (dt + 0.001)) * 0.04, isBraking, dt);
-  }
-
-  checkCollisionAndSlipstream(playerPos, playerSpeed, playerHeading, dt) {
-    if (!this.enabled || !this.car.carGroup.visible) {
-      return { isColliding: false, isDrafting: false, dist: 999 };
-    }
-
-    const oppPos = this.car.carGroup.position;
-    const dx = playerPos.x - oppPos.x;
-    const dz = playerPos.z - oppPos.z;
-    const distSq = dx * dx + dz * dz;
-    const dist = Math.sqrt(distSq);
-
-    let isColliding = false;
-    let isDrafting = false;
-
-    // 1. Slipstream Aerodynamic Drafting (within 24m behind opponent)
-    if (dist > 3.4 && dist < 24.0) {
-      const oppHeading = this.car.carGroup.rotation.y;
-      const oppFwdX = -Math.sin(oppHeading);
-      const oppFwdZ = -Math.cos(oppHeading);
-      const dotBehind = dx * (-oppFwdX) + dz * (-oppFwdZ);
-      const oppRightX = oppFwdZ;
-      const oppRightZ = -oppFwdX;
-      const latDist = Math.abs(dx * oppRightX + dz * oppRightZ);
-
-      if (dotBehind > 2.0 && latDist < 1.65 && playerSpeed > 22.0) {
-        isDrafting = true;
-      }
-    }
-
-    // 2. Physical Rigid-Body Elastic Impulse Collision Response (F1 bounding volume)
-    const collisionThreshold = 3.2; // 3.2 meters
-    if (dist < collisionThreshold && dist > 0.001) {
-      isColliding = true;
-      const nx = dx / dist;
-      const nz = dz / dist;
-      const overlap = collisionThreshold - dist;
-
-      // Elastic restitution impulse separation
-      playerPos.x += nx * overlap * 0.58;
-      playerPos.z += nz * overlap * 0.58;
-      oppPos.x -= nx * overlap * 0.42;
-      oppPos.z -= nz * overlap * 0.42;
-
-      // Momentum transfer
-      const relativeSpeed = playerSpeed - this.speed;
-      if (relativeSpeed > 0) {
-        this.speed = Math.min(94.0, this.speed + relativeSpeed * 0.45);
-      } else {
-        this.speed = Math.max(16.0, this.speed - 12.0 * dt);
-      }
-    }
-
-    return { isColliding, isDrafting, dist };
   }
 }
 
@@ -3592,12 +3489,12 @@ class RacingGenesisApp {
     this.updateEnvironmentForTrack(this.track.getBoundingRadius(), this.track.totalLength);
     this.car = new RaceCar3D(this.scene);
     this.cameraManager = new CameraManager3D(this.camera, this.renderer.domElement, this.scene);
+    this.cameraManager.setTrack(this.track);
+    this.trackOverview = new TrackOverview($("trackOverviewCanvas"), $("trackOverviewLegend"));
     this.audio = new RacingEngineSound();
 
-    // Beta: Secondary Technical Pillars (Smoke/Skid Particles, Opponent AI, Oscilloscope Telemetry)
+    // Smoke, skidmarks and live telemetry
     this.tireSmokeSystem = new TireSmokeAndSkidSystem(this.scene);
-    this.opponent = new OpponentCarAgent(this.scene);
-    this.opponent.app = this;
     this.telemetryGraph = new LiveTelemetryGraph("telemetryGraphCanvas");
     this.isOverCurb = false;
     this.prevSkidLeft = null;
@@ -3605,11 +3502,6 @@ class RacingGenesisApp {
 
     // Feature Complete: Lap Telemetry Recording & Onboarding Guide State
     this.lapTelemetryLog = [];
-    this.isDrafting = false;
-    this.aiLateralOffset = 0.0;
-    this.aiLateralTarget = 0.0;
-    this.isOvertaking = false;
-    this.overtakeStage = "NONE";
     this.lastTelemetryLogTime = 0;
 
     // 4. Raycasting & Handle Dragging
@@ -3674,7 +3566,11 @@ class RacingGenesisApp {
     this.scene.add(ambient);
 
     const sun = new THREE.DirectionalLight(0xfffbf2, 1.45);
-    sun.position.set(80, 110, 60);
+    this.sun = sun;
+    this.sunOffset = new THREE.Vector3(80, 110, 60);
+    this.shadowRight = new THREE.Vector3(this.sunOffset.z, 0, -this.sunOffset.x).normalize();
+    this.shadowUp = new THREE.Vector3().crossVectors(this.sunOffset, this.shadowRight).normalize();
+    sun.position.copy(this.sunOffset);
     sun.castShadow = true;
     sun.shadow.mapSize.width = 2048;
     sun.shadow.mapSize.height = 2048;
@@ -3685,7 +3581,7 @@ class RacingGenesisApp {
     sun.shadow.camera.top = 120;
     sun.shadow.camera.bottom = -120;
     sun.shadow.bias = -0.0004;
-    this.scene.add(sun);
+    this.scene.add(sun, sun.target);
   }
 
   setupRealisticWorld() {
@@ -3712,6 +3608,7 @@ class RacingGenesisApp {
 
   updateEnvironmentForTrack(boundingRadius, trackLength) {
     if (!this.treeGroup || !this.mountainGroup) return;
+    if (this.cameraManager && !this.isDraggingHandle) this.cameraManager.setTrack(this.track);
 
     // Clear previous dynamic trees and mountains
     while (this.treeGroup.children.length > 0) {
@@ -3869,9 +3766,8 @@ class RacingGenesisApp {
 
     const togglePanel = (panel, btn) => {
       if (!panel) return;
-      panel.classList.toggle("collapsed");
-      const isCollapsed = panel.classList.contains("collapsed");
-      if (btn) btn.classList.toggle("active", !isCollapsed);
+      this.setDrawerCollapsed(panel, btn, !panel.classList.contains("collapsed"));
+      if (this.cameraManager.isTrackOrbit) this.cameraManager.fitTrack();
     };
 
     if (btnToggleLeft) btnToggleLeft.addEventListener("click", () => togglePanel(leftPanel, btnToggleLeft));
@@ -3928,18 +3824,6 @@ class RacingGenesisApp {
     window.addEventListener("keydown", unlockAudio, { once: true });
 
     // Beta Feature Toggles
-    const btnToggleOpponent = $("btnToggleOpponent");
-    if (btnToggleOpponent) {
-      btnToggleOpponent.addEventListener("click", () => {
-        if (!this.opponent) return;
-        this.opponent.enabled = !this.opponent.enabled;
-        btnToggleOpponent.classList.toggle("active", this.opponent.enabled);
-        btnToggleOpponent.textContent = this.opponent.enabled ? "🏎️ AI Sparring Car: ON" : "🏎️ AI Sparring Car: OFF";
-        const pill = $("opponentGapPill");
-        if (pill) pill.style.display = this.opponent.enabled ? "" : "none";
-      });
-    }
-
     const btnToggleFX = $("btnToggleFX");
     if (btnToggleFX) {
       btnToggleFX.addEventListener("click", () => {
@@ -3955,12 +3839,11 @@ class RacingGenesisApp {
 
     // Camera Switcher
     document.querySelectorAll(".cam-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        document.querySelectorAll(".cam-btn").forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
-        this.cameraManager.setMode(btn.dataset.cam);
-      });
+      btn.addEventListener("click", () => this.setCamera(btn.dataset.cam));
     });
+    $("btnAerialFollow").addEventListener("click", () => this.setCamera("aerial"));
+    $("btnAerialCircuit").addEventListener("click", () => this.setCamera("orbit"));
+    $("btnAerialMap").addEventListener("click", () => this.setCamera("map"));
 
     // Sliders & Track Length (1,000m - 10,000m)
     const syncOut = () => {
@@ -4035,10 +3918,7 @@ class RacingGenesisApp {
     $("btnEditHandles").addEventListener("click", () => {
       this.track.toggleEditHandles();
       if (this.track.editHandlesVisible && this.cameraManager.mode === "chase") {
-        document.querySelectorAll(".cam-btn").forEach((b) => b.classList.remove("active"));
-        const orbitBtn = document.querySelector('.cam-btn[data-cam="orbit"]');
-        if (orbitBtn) orbitBtn.classList.add("active");
-        this.cameraManager.setMode("orbit");
+        this.setCamera("orbit");
       }
     });
 
@@ -4116,10 +3996,6 @@ class RacingGenesisApp {
     const setDriverMode = (mode) => {
       this.driverMode = mode;
       if (mode === "manual") {
-        this.aiLateralOffset = 0;
-        this.isOvertaking = false;
-        const overtakeBadge = $("overtakeBadge");
-        if (overtakeBadge) overtakeBadge.classList.remove("visible");
         if (this.car) this.manualHeading = this.car.carGroup.rotation.y;
       }
       document.querySelectorAll("#driverModeSwitcher .mode-btn").forEach((b) => {
@@ -4224,10 +4100,7 @@ class RacingGenesisApp {
         }
       } else if (e.code === "KeyC") {
         const nextCam = this.cameraManager.mode === "chase" ? "hood" : "chase";
-        this.cameraManager.setMode(nextCam);
-        document.querySelectorAll(".cam-btn").forEach((b) => {
-          b.classList.toggle("active", b.dataset.cam === nextCam);
-        });
+        this.setCamera(nextCam);
       } else if (e.code === "KeyM") {
         const on = this.audio.toggle();
         $("btnAudio").textContent = on ? "🔊 Audio: ON" : "🔊 Audio: OFF";
@@ -4245,10 +4118,47 @@ class RacingGenesisApp {
       this.camera.aspect = window.innerWidth / window.innerHeight;
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(window.innerWidth, window.innerHeight);
+      this.cameraManager.fitTrack(1, true);
     });
 
     syncOut();
     this.updateHUD();
+  }
+
+  setDrawerCollapsed(panel, button, collapsed) {
+    panel.classList.toggle("collapsed", collapsed);
+    button?.classList.toggle("active", !collapsed);
+    button?.setAttribute("aria-expanded", String(!collapsed));
+    panel.inert = collapsed;
+  }
+
+  setCamera(mode) {
+    const circuitShot = mode === "orbit" && !this.track.editHandlesVisible;
+    if (circuitShot && !this.circuitDrawers) {
+      this.circuitDrawers = [[$("leftPanel"), $("btnToggleLeft")], [$("rightPanel"), $("btnToggleRight")]]
+        .map(([panel, button]) => {
+          const collapsed = panel.classList.contains("collapsed");
+          this.setDrawerCollapsed(panel, button, true);
+          return { panel, button, collapsed };
+        });
+    } else if (!circuitShot && this.circuitDrawers) {
+      for (const { panel, button, collapsed } of this.circuitDrawers) {
+        this.setDrawerCollapsed(panel, button, collapsed);
+      }
+      this.circuitDrawers = null;
+    }
+    this.cameraManager.setMode(mode);
+    $("liveDeltaBadge").hidden = circuitShot;
+    const headerMode = this.cameraManager.isAerialView ? "aerial" : mode;
+    document.querySelectorAll(".cam-btn").forEach(btn => {
+      const active = btn.dataset.cam === headerMode;
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-pressed", String(active));
+    });
+    $("aerialControls").hidden = !this.cameraManager.isAerialView;
+    $("btnAerialFollow").setAttribute("aria-pressed", String(mode === "aerial"));
+    $("btnAerialCircuit").setAttribute("aria-pressed", String(mode === "orbit"));
+    $("btnAerialMap").setAttribute("aria-pressed", String(mode === "map"));
   }
 
   setupHandleInteractions() {
@@ -4331,6 +4241,7 @@ class RacingGenesisApp {
         this.isDraggingHandle = false;
         this.activeHandleIndex = null;
         this.cameraManager.locked = false;
+        this.cameraManager.setTrack(this.track);
         this.renderer.domElement.style.cursor = "default";
         const curLen = Math.round(this.track.totalLength || 5000);
         this.track.targetLength = curLen;
@@ -4513,12 +4424,6 @@ class RacingGenesisApp {
     this.brakeLevel = 0;
     this.currentAccel = 0;
     this.aiState = "IDLE";
-    this.aiLateralOffset = 0.0;
-    this.aiLateralTarget = 0.0;
-    this.isOvertaking = false;
-    this.overtakeStage = "NONE";
-    const overtakeBadge = $("overtakeBadge");
-    if (overtakeBadge) overtakeBadge.classList.remove("visible");
     this.records = [];
     this.fastestRecord = null;
     this.driverAI.reset();
@@ -4528,10 +4433,6 @@ class RacingGenesisApp {
       this.track.getPathPosition(0, this.car.carGroup.position);
       this.manualHeading = this.track.getTrajectoryHeading(0);
       this.car.carGroup.rotation.y = this.manualHeading;
-    }
-
-    if (this.opponent && this.track) {
-      this.opponent.reset(this.track);
     }
 
     if (this.cameraManager) {
@@ -4849,7 +4750,7 @@ class RacingGenesisApp {
         clearTimeout(this._colTimer);
         this._colTimer = setTimeout(() => colBadge.classList.remove("visible"), 650);
       }
-      if (this.cameraManager) {
+      if (this.cameraManager && !this.cameraManager.isAerialView) {
         this.cameraManager.camera.position.y += (Math.random() - 0.5) * 0.16;
       }
       if (this.audio) this.audio.playImpact(1.5);
@@ -4997,86 +4898,6 @@ class RacingGenesisApp {
     const desiredSteer = THREE.MathUtils.clamp(-Math.atan2(wheelbase * pathCurvature, 1.0), -0.38, 0.38);
     const steerRate = 1.0 - Math.exp(-7.0 * dt);
     this.steerAngle = THREE.MathUtils.lerp(this.steerAngle, desiredSteer, steerRate);
-
-    // 8. Dynamic Autonomous Overtake Planning (when opponent car is near)
-    if (this.opponent && this.opponent.enabled) {
-      let deltaProg = this.opponent.progress - this.progress;
-      while (deltaProg > 0.5) deltaProg -= 1.0;
-      while (deltaProg < -0.5) deltaProg += 1.0;
-      const gapMeters = deltaProg * trackLength;
-
-      // Opponent is near when distance is between -8m and +42m
-      const isNear = (gapMeters > -8.0 && gapMeters < 42.0);
-      const overtakeBadge = $("overtakeBadge");
-      const overtakeText = $("overtakeBadgeText");
-
-      if (isNear) {
-        this.isOvertaking = true;
-        const oppOffset = (typeof this.opponent.lateralOffset === "number") ? this.opponent.lateralOffset : 1.75;
-        // Opponent is on right -> overtake on left (-2.85m); opponent is on left -> overtake on right (+2.85m)
-        const passSide = oppOffset >= 0 ? -2.85 : 2.85;
-        const passName = oppOffset >= 0 ? "INSIDE / LEFT" : "OUTSIDE / RIGHT";
-
-        if (gapMeters > 15.0) {
-          // Stage 1: Slingshot drafting in slipstream behind opponent
-          this.overtakeStage = "SLINGSHOT";
-          this.aiLateralTarget = oppOffset; // Align in draft pocket
-          this.aiState = `AI: PLANNING OVERTAKE (DRAFTING ${gapMeters.toFixed(0)}m)`;
-          if (overtakeBadge && overtakeText) {
-            overtakeBadge.classList.add("visible");
-            overtakeText.textContent = `⚡ AI OVERTAKE PLANNED: DRAFTING (${gapMeters.toFixed(0)}m BEHIND)`;
-          }
-        } else if (gapMeters > 0.0) {
-          // Stage 2: Pull out to clear lane and execute high-speed pass
-          this.overtakeStage = "PULLING_OUT";
-          this.aiLateralTarget = passSide;
-          this.aiState = `AI: OVERTAKING (${passName} DIVE)`;
-          if (overtakeBadge && overtakeText) {
-            overtakeBadge.classList.add("visible");
-            overtakeText.textContent = `⚡ AI EXECUTING OVERTAKE: ${passName} PASS!`;
-          }
-          // Extra throttle punch during passing maneuver
-          this.currentAccel += 6.0 * dt;
-          this.speed = Math.min(104.0, this.speed + 8.5 * dt);
-        } else if (gapMeters > -8.0) {
-          // Stage 3: Wheel-to-wheel alongside opponent, holding clear lane
-          this.overtakeStage = "ALONGSIDE";
-          this.aiLateralTarget = passSide;
-          this.aiState = `AI: OVERTAKING (ALONGSIDE OPPONENT)`;
-          if (overtakeBadge && overtakeText) {
-            overtakeBadge.classList.add("visible");
-            overtakeText.textContent = `⚡ AI OVERTAKE: WHEEL-TO-WHEEL PASS!`;
-          }
-        }
-      } else if (this.isOvertaking) {
-        if (gapMeters <= -8.0 && gapMeters > -25.0) {
-          this.overtakeStage = "CLEAR";
-          this.aiLateralTarget = 0.0;
-          this.aiState = "AI: OVERTAKE COMPLETE 🏁";
-          const overtakeBadge = $("overtakeBadge");
-          if (overtakeBadge) {
-            const overtakeText = $("overtakeBadgeText");
-            if (overtakeText) overtakeText.textContent = "✓ OVERTAKE COMPLETE! CLEAR AHEAD";
-            clearTimeout(this._overtakeBadgeTimer);
-            this._overtakeBadgeTimer = setTimeout(() => overtakeBadge.classList.remove("visible"), 2000);
-          }
-        } else {
-          this.isOvertaking = false;
-          this.overtakeStage = "NONE";
-          this.aiLateralTarget = 0.0;
-          const overtakeBadge = $("overtakeBadge");
-          if (overtakeBadge) overtakeBadge.classList.remove("visible");
-        }
-      } else {
-        this.aiLateralTarget = 0.0;
-        const overtakeBadge = $("overtakeBadge");
-        if (overtakeBadge && !this.isOvertaking) overtakeBadge.classList.remove("visible");
-      }
-
-      // Smoothly transition lateral position
-      const laneShiftRate = (this.overtakeStage === "PULLING_OUT") ? 4.8 : 2.6;
-      this.aiLateralOffset = THREE.MathUtils.lerp(this.aiLateralOffset || 0, this.aiLateralTarget || 0, 1.0 - Math.exp(-laneShiftRate * dt));
-    }
 
     // Track progression
     const deltaProgress = (this.speed * dt) / trackLength;
@@ -5277,7 +5098,7 @@ class RacingGenesisApp {
         rpm: Math.round(this.currentRPM || 4500),
         gear: this.currentGear || 1,
         curb: this.isOverCurb ? 1 : 0,
-        drafting: this.isDrafting ? 1 : 0
+        drafting: 0 // Preserve the existing CSV column for single-car sessions.
       });
     }
   }
@@ -5300,6 +5121,22 @@ class RacingGenesisApp {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  }
+
+  updateAerialShadows() {
+    // Move the shadow map with the car in whole light-space texels.
+    if (this.cameraManager.mode === "aerial" || this.cameraManager.mode === "orbit") {
+      const { camera, mapSize } = this.sun.shadow;
+      const texel = (camera.right - camera.left) / mapSize.x;
+      const target = this.sun.target.position.copy(this.car.carGroup.position).setY(0);
+      const across = target.dot(this.shadowRight);
+      const up = target.dot(this.shadowUp);
+      target.addScaledVector(this.shadowRight, Math.round(across / texel) * texel - across);
+      target.addScaledVector(this.shadowUp, Math.round(up / texel) * texel - up);
+    } else {
+      this.sun.target.position.set(0, 0, 0);
+    }
+    this.sun.position.copy(this.sun.target.position).add(this.sunOffset);
   }
 
   animate() {
@@ -5327,13 +5164,6 @@ class RacingGenesisApp {
       this.track.getPathPosition(this.progress, this.car.carGroup.position);
       const targetHeading = this.track.getTrajectoryHeading(this.progress);
 
-      // Dynamic lateral lane offset for overtaking maneuvers
-      if (Math.abs(this.aiLateralOffset || 0) > 0.01) {
-        const perpX = Math.cos(targetHeading);
-        const perpZ = -Math.sin(targetHeading);
-        this.car.carGroup.position.x += perpX * this.aiLateralOffset;
-        this.car.carGroup.position.z += perpZ * this.aiLateralOffset;
-      }
       this.car.carGroup.position.y = 0.05;
       this.car.carGroup.rotation.x = 0;
       this.car.carGroup.rotation.z = 0;
@@ -5355,14 +5185,18 @@ class RacingGenesisApp {
     this.car.updateVisuals(this.speed, this.steerAngle, isBraking, dt);
 
     // 5. Update Braking Zone Overlay
-    this.track.updateBrakingZone(this.progress);
+    const showBrakingZone = this.cameraManager.mode !== "orbit";
+    this.track.brakingZoneMesh.visible = showBrakingZone;
+    if (showBrakingZone) this.track.updateBrakingZone(this.progress);
 
     // 6. Update Handle Scales
     this.track.updateHandleScales(this.camera);
 
     // 7. Update Camera (Chase camera locks directly behind car's actual forward chassis heading)
     this.car.carGroup.getWorldDirection(_camForwardVec);
-    this.cameraManager.update(this.car.carGroup, _camForwardVec, this.speed, dt);
+    this.cameraManager.update(this.car.carGroup, _camForwardVec, this.speed, dt, this.track.editHandlesVisible);
+    this.trackOverview.draw(this.track, this.cameraManager);
+    this.updateAerialShadows();
 
     // Driver helmet & Halo central pillar visibility: hide in Cockpit 3D POV so track and road ahead are completely unobstructed
     const isCockpit = (this.cameraManager.mode === "hood");
@@ -5372,48 +5206,6 @@ class RacingGenesisApp {
     }
     if (this.car.haloStrut) {
       this.car.haloStrut.visible = !isCockpit;
-    }
-
-    // Feature Complete: Update Opponent AI with Elastic Impulse Collision & Slipstream
-    if (this.opponent) {
-      this.opponent.update(dt, this.track, this.progress, this.speed);
-
-      const colResult = this.opponent.checkCollisionAndSlipstream(
-        this.car.carGroup.position,
-        this.speed,
-        this.driverMode === "manual" ? this.manualHeading : this.car.carGroup.rotation.y,
-        dt
-      );
-
-      // Collision Impulse Feedback
-      const colBadge = $("collisionBadge");
-      if (colResult.isColliding) {
-        if (colBadge) {
-          colBadge.classList.add("visible");
-          clearTimeout(this._colTimer);
-          this._colTimer = setTimeout(() => colBadge.classList.remove("visible"), 650);
-        }
-        if (this.cameraManager) {
-          this.cameraManager.camera.position.y += (Math.random() - 0.5) * 0.12;
-        }
-        if (this.audio) this.audio.playImpact(1.4);
-        if (this.tireSmokeSystem) {
-          this.tireSmokeSystem.emitSmoke(this.car.carGroup.position, new THREE.Vector3(0, 0, 0), 2.2);
-        }
-        this.speed = Math.max(6.0, this.speed - 14.0 * dt);
-      }
-
-      // Slipstream Aerodynamic Drafting Feedback & Boost
-      const slipBadge = $("slipstreamBadge");
-      this.isDrafting = colResult.isDrafting;
-      if (this.isDrafting) {
-        if (slipBadge) slipBadge.classList.add("visible");
-        if (this.throttleLevel > 0.8) {
-          this.speed = Math.min(104.0, this.speed + 7.5 * dt); // +15% aerodynamic draft boost
-        }
-      } else {
-        if (slipBadge) slipBadge.classList.remove("visible");
-      }
     }
 
     // Record lap telemetry point at ~15 Hz
@@ -5461,19 +5253,7 @@ class RacingGenesisApp {
       this.audio.update(speedMph, isBraking, this.throttleLevel, this.currentRPM, this.currentGear, this.isOverCurb);
     }
 
-    // Beta: Update Opponent Gap & Oscilloscope Telemetry Trace
-    if (this.opponent && this.opponent.enabled) {
-      let deltaProg = this.opponent.progress - this.progress;
-      while (deltaProg > 0.5) deltaProg -= 1.0;
-      while (deltaProg < -0.5) deltaProg += 1.0;
-      const distMeters = deltaProg * (this.track ? this.track.totalLength : 5000);
-      const gapSec = distMeters / Math.max(12, Math.abs(this.speed));
-      const gapDisp = $("opponentGapDisplay");
-      if (gapDisp) {
-        gapDisp.textContent = (gapSec >= 0 ? "+" : "") + gapSec.toFixed(2) + "s";
-        gapDisp.style.color = (gapSec >= 0 ? "#ff4444" : "#10b981");
-      }
-    }
+    // Update the live telemetry trace.
     if (this.telemetryGraph) {
       this.telemetryGraph.record(
         Math.abs(this.speed) / 98.0,

@@ -8,11 +8,18 @@
     <meta http-equiv="Expires" content="0" />
     <meta name="theme-color" content="#070b14" />
     <title>Racing Genesis - F1 Pro Simulator (Feature Complete Build v8.0)</title>
-    <link rel="stylesheet" href="style.css?v=8.0" />
+    <link rel="stylesheet" href="style.css?v=8.0.3" />
   </head>
   <body>
     <!-- 3D WebGL Canvas Layer -->
     <div id="webgl-container"></div>
+    <canvas id="trackOverviewCanvas" class="track-overview-canvas" aria-hidden="true" hidden></canvas>
+    <div id="trackOverviewLegend" class="track-overview-legend" aria-label="Track guidance" hidden>
+      <span class="overview-straight">Straight</span>
+      <span class="overview-corner">Corner</span>
+      <span class="overview-braking">Braking zone</span>
+    </div>
+
 
     <!-- Floating Windows 11 Fluent Panel Toggle Buttons -->
     <button id="btnToggleLeft" class="win11-tab-toggle left" title="Toggle Track Editor Panel ([)">
@@ -41,7 +48,7 @@
           <div class="camera-switcher win11-segmented">
             <button class="cam-btn active" data-cam="chase">3rd Person</button>
             <button class="cam-btn" data-cam="hood">Cockpit 3D</button>
-            <button class="cam-btn" data-cam="orbit">Top / Orbit</button>
+            <button class="cam-btn" data-cam="aerial" title="Helicopter camera, full circuit, and map">Top / Orbit</button>
           </div>
         </div>
 
@@ -54,10 +61,6 @@
             <span class="stat-name">GUIDE</span>
             <span class="stat-val highlight">❓ HELP</span>
           </button>
-          <div class="pill-stat gap-stat" id="opponentGapPill" title="Delta to Sparring Car">
-            <span class="stat-name">P2 GAP</span>
-            <span class="stat-val highlight" id="opponentGapDisplay">+1.45s</span>
-          </div>
           <div class="pill-stat fps-stat">
             <span class="stat-name">PERF</span>
             <span class="stat-val highlight" id="fpsDisplay">90 FPS</span>
@@ -98,11 +101,10 @@
             </div>
           </div>
 
-          <!-- Beta Multi-Car & Visual FX Toggles -->
+          <!-- Visual FX Toggle -->
           <div class="f1-presets-section" style="margin-top: 10px;">
             <span class="f1-presets-title">BETA SIMULATION MODULES</span>
             <div class="f1-presets-grid">
-              <button class="f1-preset-pill active" id="btnToggleOpponent">🏎️ AI Sparring Car: ON</button>
               <button class="f1-preset-pill active" id="btnToggleFX">💨 Smoke &amp; FX: ON</button>
             </div>
           </div>
@@ -185,6 +187,11 @@
 
         <!-- Center: Dynamic Driver HUD Overlay -->
         <div class="center-hud">
+          <div id="aerialControls" class="aerial-controls" role="group" aria-label="Aerial camera" hidden>
+            <button id="btnAerialFollow" type="button" aria-pressed="true" title="Follow the car with a stabilized aerial camera">Helicopter</button>
+            <button id="btnAerialCircuit" type="button" aria-pressed="false" title="See the entire track from directly overhead. Zoom in to follow the car.">Full circuit</button>
+            <button id="btnAerialMap" type="button" aria-pressed="false" title="Show the circuit map and braking guidance">Map</button>
+          </div>
           <!-- Official F1 5-Light Starting Gantry HUD Overlay -->
           <div class="f1-start-lights-overlay" id="f1StartLightsOverlay">
             <div class="lights-housing">
@@ -201,16 +208,8 @@
             <span class="warning-icon">&#9888;</span> THRESHOLD BRAKING ACTIVE
           </div>
 
-          <div class="slipstream-badge" id="slipstreamBadge">
-            <span class="slipstream-icon">💨</span> SLIPSTREAM DRAFTING (+15% AERO BOOST)
-          </div>
-
-          <div class="overtake-badge" id="overtakeBadge">
-            <span class="overtake-icon">⚡</span> <span id="overtakeBadgeText">AI OVERTAKE PLANNED: SLINGSHOT PASS</span>
-          </div>
-
           <div class="collision-badge" id="collisionBadge">
-            <span class="collision-icon">💥</span> CAR CONTACT - IMPULSE SEPARATION
+            <span class="collision-icon">💥</span> TRACKSIDE CONTACT - IMPULSE SEPARATION
           </div>
 
           <div class="track-warning-badge" id="trackIntersectBadge">
@@ -337,6 +336,13 @@
             </div>
           </div>
         </aside>
+      </div>
+
+      <div id="circuitZoomControls" class="circuit-zoom-controls" role="group" aria-label="Full circuit zoom" aria-describedby="circuitZoomHint" hidden>
+        <span id="circuitZoomHint">Scroll or pinch to zoom</span>
+        <button id="btnCircuitZoomOut" type="button" aria-label="Zoom out" title="Zoom out">&minus;</button>
+        <button id="btnCircuitZoomIn" type="button" aria-label="Zoom in" title="Zoom in">+</button>
+        <button id="btnCircuitFit" type="button" title="Restore the full overhead view">Fit track</button>
       </div>
 
       <!-- Bottom Playback Dock (Windows 11 Fluent Command Bar) -->
@@ -468,8 +474,8 @@
             </div>
             <div class="onboarding-card">
               <span class="onboarding-icon">🏎️</span>
-              <h4>AI &amp; Multi-Car Racing</h4>
-              <p><strong>Sparring Opponent:</strong> Races concurrently; slipstream within 24m for a +15% aerodynamic draft boost.<br><strong>Impulse Collision:</strong> Physical car-to-car elastic bounce-back.</p>
+              <h4>AI Autopilot</h4>
+              <p>Choose <strong>AI Driver</strong> to watch the car complete laps, or <strong>Manual</strong> to drive it yourself.</p>
             </div>
             <div class="onboarding-card">
               <span class="onboarding-icon">📐</span>
@@ -493,6 +499,6 @@
     </div>
 
     <!-- Application Script (ES Module with cache-busting) -->
-    <script type="module" src="app.js?v=8.0"></script>
+    <script type="module" src="app.js?v=8.0.3"></script>
   </body>
 </html>
