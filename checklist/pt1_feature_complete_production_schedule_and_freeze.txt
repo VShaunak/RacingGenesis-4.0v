@@ -1,0 +1,59 @@
+RACING GENESIS — ASSIGNMENT 6 FEATURE COMPLETE PRODUCTION SCHEDULE & FREEZE
+Course: CS 549 (AI for Visual Computing) • Rutgers University
+Build Version: Feature Complete Build v8.0 (Feature Freeze Milestone)
+Date: November 2026
+Team: Shaunak Vidwans, Pavan Sai Komara, Sridevi Mudiyanur Ramamurthy, Zeba Afreen
+
+================================================================================
+1. EXECUTIVE SPRINT SUMMARY: THE FEATURE FREEZE MILESTONE
+================================================================================
+Assignment 6 marks our formal FEATURE FREEZE. All intended mechanics, procedural track
+synthesis shaders, vehicle dynamics physics, multi-car AI sparring agents, audio
+synthesizers, and UI telemetry drawers are fully implemented, verified, and locked.
+No new gameplay features or architectural changes may be introduced after this deadline.
+Moving into Assignment 7, development effort focuses solely on polish, optimization,
+and bug fixes identified through our 5 formal peer playtesting sessions.
+
+================================================================================
+2. COMPLETED PRODUCTION SCHEDULE & BUFFER WEEK STATUS
+================================================================================
+Week 9 (Alpha Build - MVP 2.0) [STATUS: COMPLETED]
+✔ Start, Active, and End game loop state machine with countdown signals and checkered flag.
+✔ 5 authentic Grand Prix circuits (Monza 5,793m, Silverstone, Spa, Monaco, Suzuka).
+✔ Custom circuit length scaling from 1,000m to 10,000m with dynamic trackside repositioning.
+✔ Full manual WASD keyboard controls alongside heuristic autonomous AI driving mode.
+✔ 90 FPS WebGL rendering engine with zero-allocation Vector3 scratch pools.
+
+Week 10 (Visual Shaders & Particles) [STATUS: COMPLETED - BETA]
+✔ Single draw-call THREE.InstancedMesh tire smoke particle system (120 particles).
+✔ Dynamic asphalt skidmark ribbon segments deposited along tire cornering paths.
+✔ Brake disc thermal incandescence shader (rotors glow molten red at 800°C under threshold braking).
+✔ Procedural atmospheric daylight sky dome gradient texture (horizon haze to alpine zenith).
+
+Week 11 (Boundaries & Curb Haptics) [STATUS: COMPLETED - BETA]
+✔ High-frequency curb contact detection triggering chassis micro-oscillations and camera rumble.
+✔ Synthesized 48 Hz Web Audio square wave harmonics for curb rumble strip buzzing.
+✔ Off-track grass/gravel trap drag penalties (-34 m/s²) and kicking dust particles.
+
+Week 12 (Multi-Car Simulation) [STATUS: COMPLETED - BETA]
+✔ Secondary F1 racing entity (Sparring Opponent AI) with Scarlet Red and Gold livery.
+✔ Lookahead spline pacing anticipating upcoming corner radii and holding overtaking lane offset.
+✔ Real-time time delta calculation displayed directly on the HUD (P2 GAP: +1.45s).
+
+Week 13 (Live Telemetry Pipeline & CSV Export) [STATUS: COMPLETED - FEATURE COMPLETE]
+✔ Rolling 75-sample circular buffer in HUD Telemetry drawer plotting synchronized live waveforms.
+✔ Live 15 Hz CSV telemetry recording with one-click export (.CSV) in Telemetry drawer and Finish modal.
+✔ In-drawer UI toggles for AI Sparring Car on/off and Particle FX on/off.
+
+Week 14 (Feature Complete & Peer Playtesting) [STATUS: COMPLETED - ASSIGNMENT 6]
+✔ Multi-Car Rigid-Body Elastic Impulse Collision Response (push-back force, momentum transfer, sound).
+✔ Slipstream Aerodynamic Drafting (+15% top-speed draft boost when trailing within 24m).
+✔ Spline self-intersection geometric check with HUD warning badge.
+✔ Seamless Web Audio autoplay unlock on any user click or keypress.
+✔ Interactive Onboarding & Think-Aloud Playtesting Guide modal.
+✔ Formal peer playtesting user study conducted with 5 subjects outside the group.
+
+Week 15 (Final Polish & Assignment 7 Delivery) [STATUS: UPCOMING FINAL SPRINT]
+— Implement peer playtesting action items (dynamic racing line assist, DRS wing flap animation).
+— Audio mixer dynamic headroom balancing.
+— Final 4K 60 FPS gameplay capture and final comprehensive project documentation.
